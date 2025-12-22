@@ -1,8 +1,5 @@
 import express, { type Request, type Response } from 'express'
 import documentRouter from './router/document/document.ts'
-import dotenv from 'dotenv'
-
-dotenv.config()
 
 export const app = express()
 const PORT = 3000
