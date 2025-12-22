@@ -1,5 +1,10 @@
 import express, { type Request, type Response } from 'express'
-const app = express()
+import documentRouter from './router/document/document.ts'
+import dotenv from 'dotenv'
+
+dotenv.config()
+
+export const app = express()
 const PORT = 3000
 
 app.get('/', (req: Request, res: Response)=> {
@@ -9,6 +14,8 @@ app.get('/', (req: Request, res: Response)=> {
             'message': 'Successful'
         })
 })
+
+app.use('/document', documentRouter)
 
 app.listen(PORT, ()=> {
     console.log(`Listening to port ${PORT}`)
