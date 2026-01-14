@@ -80,16 +80,16 @@ const ftpConfig = {
     },
 }
 
-const uploadToFTP = async (file: Express.Multer.File) => {
+const uploadToFTP = async (file: Express.Multer.File, filePath: string) => {
     const client = new Client()
     client.ftp.verbose = true
-    
+
     try {
         await client.access(ftpConfig)
-        await client.ensureDir(process.env.FTP_UPLOAD_DIR!)
+        await client.ensureDir(path.join(process.env.FTP_UPLOAD_DIR!, filePath))
         await client.uploadFrom(
             Readable.from([file.buffer]),
-            path.join(process.env.FTP_UPLOAD_DIR!, file.originalname)
+            path.join(process.env.FTP_UPLOAD_DIR!, filePath, file.originalname)
         )
 
         await client.send('QUIT')
@@ -108,9 +108,14 @@ router.post(
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded' })
         }
+        // read file path from multipart form fields (req.body) and validate
+        const filePath = (req.body && (req.body.file_path ?? req.body.filePath)) as string | undefined
+        if (!filePath) {
+            return res.status(400).json({ message: 'No file_path provided' })
+        }
         console.log('upload-file')
         try {
-            await uploadToFTP(req.file)
+            await uploadToFTP(req.file, filePath)
             res.status(200).json({
                 message: 'File uploaded successfully via FTP',
                 filename: req.file.originalname
