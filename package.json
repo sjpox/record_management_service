@@ -2,6 +2,8 @@
   "type": "module",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.956.0",
+    "@prisma/adapter-mariadb": "^7.2.0",
+    "@prisma/client": "^7.2.0",
     "@types/multer": "^2.0.0",
     "@types/multer-s3": "^3.0.3",
     "basic-ftp": "^5.0.5",
@@ -9,7 +11,6 @@
     "express": "^5.2.1",
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
-    "prisma": "^7.2.0",
     "ssh2-sftp-client": "^12.0.1"
   },
   "scripts": {
@@ -19,9 +20,10 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^25.0.3",
+    "@types/node": "^25.0.7",
     "@types/ssh2-sftp-client": "^9.0.6",
     "nodemon": "^3.1.11",
+    "prisma": "^7.2.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
