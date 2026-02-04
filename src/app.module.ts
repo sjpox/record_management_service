@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { HealthModule } from './modules/health/health.module';
 import { DocOriginsModule } from './modules/doc-origins/doc-origins.module';
 import { ResponPersonsModule } from './modules/respon-persons/respon-persons.module';
 import { DocTypesModule } from './modules/doc-types/doc-types.module';
@@ -14,6 +15,7 @@ import { OutGoingsModule } from './modules/out-goings/out-goings.module';
   imports: [
     PrismaModule,
     CommonModule,
+    HealthModule,
     DocOriginsModule,
     ResponPersonsModule,
     DocTypesModule,
