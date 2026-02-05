@@ -17,6 +17,7 @@ import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { BulkCreateVoucherDto } from './dto/bulk-create-voucher.dto';
 import { VoucherQueryDto } from './dto/voucher-query.dto';
+import { UpdatePhotosDto } from './dto/update-photos.dto';
 
 @Controller('vouchers')
 export class VouchersController {
@@ -25,7 +26,18 @@ export class VouchersController {
   @Get()
   findAll(@Query() query: VoucherQueryDto) {
     const isArchived = query.isArchived !== undefined ? query.isArchived === 'true' : undefined;
-    return this.service.findAll(query, isArchived, query.search);
+    const filters = {
+      voucherNo: query.voucherNo,
+      transactionNo: query.transactionNo,
+      payee: query.payee,
+      claimType: query.claimType,
+    };
+    return this.service.findAll(query, isArchived, query.search, filters);
+  }
+
+  @Get('stats')
+  getStats() {
+    return this.service.getStats();
   }
 
   @Get('search')
@@ -40,6 +52,11 @@ export class VouchersController {
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
+  }
+
+  @Get(':id/details')
+  findOneWithPhotos(@Param('id', ParseIntPipe) id: number) {
+    return this.service.findOneWithPhotos(id);
   }
 
   @Post()
@@ -61,18 +78,14 @@ export class VouchersController {
     return this.service.getPhotos(id);
   }
 
-  @Post(':id/photos')
-  @UseInterceptors(FilesInterceptor('photos', 10))
-  addPhotos(
+  @Put(':id/photos')
+  @UseInterceptors(FilesInterceptor('photos'))
+  updatePhotos(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFiles() files: Express.Multer.File[],
+    @Body() dto: UpdatePhotosDto,
+    @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.addPhotos(id, files);
-  }
-
-  @Delete(':id/photos/:photoId')
-  deletePhoto(@Param('photoId', ParseIntPipe) photoId: number) {
-    return this.service.deletePhoto(photoId);
+    return this.service.updatePhotos(id, dto.deletePhotoIds, files);
   }
 
   @Delete(':id')

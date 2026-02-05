@@ -10,12 +10,15 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
 import { InCommsModule } from './modules/in-comms/in-comms.module';
 import { OutGoingsModule } from './modules/out-goings/out-goings.module';
 import { UsersModule } from './modules/users/users.module';
+import { FilesModule } from './modules/files/files.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
     PrismaModule,
     CommonModule,
     HealthModule,
+    AuthModule,
     DocOriginsModule,
     ResponPersonsModule,
     ReceiversModule,
@@ -24,6 +27,7 @@ import { UsersModule } from './modules/users/users.module';
     InCommsModule,
     OutGoingsModule,
     UsersModule,
+    FilesModule,
   ],
 })
 export class AppModule {}

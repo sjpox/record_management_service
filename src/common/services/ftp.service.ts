@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Client } from 'basic-ftp';
 import * as path from 'path';
-import { Readable } from 'stream';
+import { Readable, Writable } from 'stream';
 import sharp from 'sharp';
 
 export interface UploadResult {
@@ -34,6 +34,7 @@ export class FtpService {
   };
 
   private readonly baseUploadDir = process.env.FTP_UPLOAD_DIR ?? '/ftp';
+  private readonly apiBaseUrl = process.env.API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
   private readonly imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
 
   private isImage(filename: string): boolean {
@@ -42,7 +43,13 @@ export class FtpService {
   }
 
   private async convertToWebp(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer).webp({ quality: 100 }).toBuffer();
+    return sharp(buffer)
+      .webp({
+        quality: 85,
+        smartSubsample: false,
+        effort: 4,
+      })
+      .toBuffer();
   }
 
   private getWebpFilename(filename: string): string {
@@ -202,5 +209,46 @@ export class FtpService {
     } finally {
       client.close();
     }
+  }
+
+  getFileUrl(filePath: string): string {
+    return `${this.apiBaseUrl}/api/files${filePath}`;
+  }
+
+  async downloadFile(filePath: string): Promise<Buffer> {
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+
+    try {
+      await client.access(this.ftpConfig);
+
+      const chunks: Buffer[] = [];
+      const writable = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(chunk);
+          callback();
+        },
+      });
+
+      await client.downloadTo(writable, filePath);
+      return Buffer.concat(chunks);
+    } finally {
+      client.close();
+    }
+  }
+
+  getMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.tiff': 'image/tiff',
+      '.pdf': 'application/pdf',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 }
