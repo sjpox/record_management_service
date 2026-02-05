@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString, IsInt } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString, IsInt, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateVoucherDto {
@@ -32,16 +32,9 @@ export class CreateVoucherDto {
   DateDisbursed: string;
 
   @IsOptional()
-  @IsString()
-  ArchivingArea?: string;
-
-  @IsOptional()
-  @IsString()
-  RackNo?: string;
-
-  @IsOptional()
-  @IsString()
-  Folder?: string;
+  @Type(() => Boolean)
+  @IsBoolean()
+  IsArchived?: boolean;
 
   @IsOptional()
   @Type(() => Number)

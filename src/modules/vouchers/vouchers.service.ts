@@ -204,4 +204,39 @@ export class VouchersService {
 
     return deleted;
   }
+
+  async bulkCreate(vouchers: CreateVoucherDto[]): Promise<{ created: number; failed: number; errors: string[] }> {
+    const errors: string[] = [];
+    let created = 0;
+    let failed = 0;
+
+    // Process in transaction for atomicity
+    await this.prisma.$transaction(async (tx) => {
+      for (const dto of vouchers) {
+        try {
+          await tx.vouchers.create({
+            data: {
+              VoucherNo: dto.VoucherNo,
+              TransactionNo: dto.TransactionNo,
+              Payee: dto.Payee,
+              Particulars: dto.Particulars,
+              ClaimType: dto.ClaimType,
+              Amount: dto.Amount,
+              DateDisbursed: new Date(dto.DateDisbursed),
+              IsArchived: dto.IsArchived ?? false,
+              AddedById: dto.AddedById,
+              LastModifiedById: dto.LastModifiedById,
+            },
+          });
+          created++;
+        } catch (error) {
+          failed++;
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`Voucher ${dto.VoucherNo}: ${message}`);
+        }
+      }
+    });
+
+    return { created, failed, errors };
+  }
 }

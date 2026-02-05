@@ -15,6 +15,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { VouchersService } from './vouchers.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
+import { BulkCreateVoucherDto } from './dto/bulk-create-voucher.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @Controller('vouchers')
@@ -67,5 +68,10 @@ export class VouchersController {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
+  }
+
+  @Post('bulk')
+  bulkCreate(@Body() dto: BulkCreateVoucherDto) {
+    return this.service.bulkCreate(dto.vouchers);
   }
 }
