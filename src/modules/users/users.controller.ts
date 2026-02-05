@@ -9,14 +9,14 @@ import {
   Query,
   ParseIntPipe,
 } from '@nestjs/common';
-import { DocTypesService } from './doc-types.service';
-import { CreateDocTypeDto } from './dto/create-doc-type.dto';
-import { UpdateDocTypeDto } from './dto/update-doc-type.dto';
+import { UsersService } from './users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
-@Controller('doc-types')
-export class DocTypesController {
-  constructor(private readonly service: DocTypesService) {}
+@Controller('users')
+export class UsersController {
+  constructor(private readonly service: UsersService) {}
 
   @Get()
   findAll(@Query() pagination: PaginationDto) {
@@ -29,12 +29,12 @@ export class DocTypesController {
   }
 
   @Post()
-  create(@Body() dto: CreateDocTypeDto) {
+  create(@Body() dto: CreateUserDto) {
     return this.service.create(dto);
   }
 
   @Put(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDocTypeDto) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
     return this.service.update(id, dto);
   }
 

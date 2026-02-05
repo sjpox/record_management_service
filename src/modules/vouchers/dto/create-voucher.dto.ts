@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString, IsInt } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateVoucherDto {
@@ -18,6 +18,10 @@ export class CreateVoucherDto {
   @IsString()
   Particulars: string;
 
+  @IsOptional()
+  @IsString()
+  ClaimType?: string;
+
   @IsNotEmpty()
   @Type(() => Number)
   @IsNumber()
@@ -29,13 +33,23 @@ export class CreateVoucherDto {
 
   @IsOptional()
   @IsString()
+  ArchivingArea?: string;
+
+  @IsOptional()
+  @IsString()
+  RackNo?: string;
+
+  @IsOptional()
+  @IsString()
   Folder?: string;
 
   @IsOptional()
-  @IsString()
-  RoomNo?: string;
+  @Type(() => Number)
+  @IsInt()
+  AddedById?: number;
 
   @IsOptional()
-  @IsString()
-  DocTag?: string;
+  @Type(() => Number)
+  @IsInt()
+  LastModifiedById?: number;
 }

@@ -6,6 +6,27 @@ datasource db {
   provider = "mysql"
 }
 
+// User Management
+model Users {
+  Id           Int        @id @default(autoincrement()) @map("user_id")
+  FirstName    String     @db.VarChar(255) @map("first_name")
+  LastName     String     @db.VarChar(255) @map("last_name")
+  EmployeeId   String     @db.VarChar(100) @map("employee_id")
+  PasswordHash String     @db.VarChar(255) @map("password_hash")
+  Section      String?    @db.VarChar(255) @map("section")
+  Role         String?    @db.VarChar(100) @map("role")
+  IsActive     Boolean    @default(true) @map("is_active")
+  DateAdded    DateTime   @default(now()) @db.DateTime @map("date_added")
+  LastLogin    DateTime?  @db.DateTime @map("last_login")
+
+  // Relations for Vouchers
+  VouchersAdded        Vouchers[] @relation("VoucherAddedBy")
+  VouchersModified     Vouchers[] @relation("VoucherModifiedBy")
+  VoucherImagesAdded   VouPhotos[] @relation("VoucherImageAddedBy")
+
+  @@map("users")
+}
+
 // Lookup Tables
 model DocOrigins {
   Id       Int       @id @default(autoincrement())
@@ -27,13 +48,6 @@ model ResponPersons {
   @@map("ResponPersons")
 }
 
-model DocTypes {
-  Id   Int    @id @default(autoincrement())
-  Type String @db.VarChar(255)
-
-  @@map("DocTypes")
-}
-
 model Receivers {
   Id         Int    @id @default(autoincrement())
   Department String @db.VarChar(255)
@@ -50,19 +64,30 @@ model StockRooms {
 
 // Main Document Tables
 model Vouchers {
-  Id           Int         @id @default(autoincrement())
-  VoucherNo    String      @db.VarChar(50)
-  TransactionNo      String     @db.VarChar(50)
-  Payee        String     @db.VarChar(255)
-  Particulars  String     @db.Text
-  Amount       Decimal    @db.Decimal(18, 2)
-  DateDisbursed DateTime   @db.DateTime
-  Folder       String?     @db.VarChar(255)
-  RoomNo       String?     @db.VarChar(50)
-  DocTag       String?     @db.VarChar(100)
-  VouPhotos    VouPhotos[]
+  Id              Int         @id @default(autoincrement()) @map("voucher_id")
+  VoucherNo       String      @db.VarChar(50) @map("voucher_no")
+  TransactionNo   String      @db.VarChar(50) @map("transaction_no")
+  Payee           String      @db.VarChar(255) @map("payee")
+  Particulars     String      @db.Text @map("particulars")
+  ClaimType       String?     @db.VarChar(255) @map("claim_type")
+  Amount          Decimal     @db.Decimal(18, 2) @map("amount")
+  DateDisbursed   DateTime    @db.DateTime @map("date_disbursed")
+  ArchivingArea   String?     @db.VarChar(255) @map("archiving_area")
+  RackNo          String?     @db.VarChar(50) @map("rack_no")
+  Folder          String?     @db.VarChar(255) @map("folder")
+  DateAdded       DateTime    @default(now()) @db.DateTime @map("date_added")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+  AddedById       Int?        @map("added_by")
+  LastModifiedById Int?       @map("last_modified_by")
 
-  @@map("Vouchers")
+  // Relations
+  AddedBy         Users?      @relation("VoucherAddedBy", fields: [AddedById], references: [Id])
+  LastModifiedBy  Users?      @relation("VoucherModifiedBy", fields: [LastModifiedById], references: [Id])
+  VouPhotos       VouPhotos[]
+
+  @@index([AddedById])
+  @@index([LastModifiedById])
+  @@map("vouchers")
 }
 
 model InComms {
@@ -111,13 +136,19 @@ model OutGoings {
 
 // Photo Tables
 model VouPhotos {
-  Vou_Id     Int      @id @default(autoincrement())
-  ImageFile  String   @db.VarChar(500)
-  Voucher_Id Int
-  Voucher    Vouchers @relation(fields: [Voucher_Id], references: [Id], onDelete: Cascade)
+  Id            Int      @id @default(autoincrement()) @map("voucher_image_id")
+  ImageFile     String   @db.VarChar(500) @map("image_file")
+  ImageFileType String?  @db.VarChar(50) @map("image_file_type")
+  VoucherId     Int      @map("voucher_id")
+  EvidencedById Int?     @map("evidenced_by")
 
-  @@index([Voucher_Id])
-  @@map("VouPhotos")
+  // Relations
+  Voucher       Vouchers @relation(fields: [VoucherId], references: [Id], onDelete: Cascade)
+  EvidencedBy   Users?   @relation("VoucherImageAddedBy", fields: [EvidencedById], references: [Id])
+
+  @@index([VoucherId])
+  @@index([EvidencedById])
+  @@map("voucher_images")
 }
 
 model OthInPhotos {

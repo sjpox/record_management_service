@@ -21,7 +21,11 @@ export class VouchersService {
       this.prisma.vouchers.findMany({
         skip,
         take: limit,
-        include: { VouPhotos: true },
+        include: {
+          VouPhotos: true,
+          AddedBy: true,
+          LastModifiedBy: true,
+        },
       }),
       this.prisma.vouchers.count(),
     ]);
@@ -38,7 +42,11 @@ export class VouchersService {
   async findOne(id: number): Promise<Vouchers> {
     const item = await this.prisma.vouchers.findUnique({
       where: { Id: id },
-      include: { VouPhotos: true },
+      include: {
+        VouPhotos: true,
+        AddedBy: true,
+        LastModifiedBy: true,
+      },
     });
     if (!item) throw new NotFoundException(`Voucher with ID ${id} not found`);
     return item;
@@ -47,7 +55,11 @@ export class VouchersService {
   async search(voucherNo: string): Promise<Vouchers[]> {
     return this.prisma.vouchers.findMany({
       where: { VoucherNo: { contains: voucherNo } },
-      include: { VouPhotos: true },
+      include: {
+        VouPhotos: true,
+        AddedBy: true,
+        LastModifiedBy: true,
+      },
     });
   }
 
@@ -85,7 +97,9 @@ export class VouchersService {
             await tx.vouPhotos.createMany({
               data: successfulUploads.map((filePath) => ({
                 ImageFile: filePath,
-                Voucher_Id: voucher.Id,
+                ImageFileType: 'webp',
+                VoucherId: voucher.Id,
+                EvidencedById: dto.AddedById,
               })),
             });
           }
@@ -113,7 +127,11 @@ export class VouchersService {
         ...rest,
         DateDisbursed: DateDisbursed ? new Date(DateDisbursed) : undefined,
       },
-      include: { VouPhotos: true },
+      include: {
+        VouPhotos: true,
+        AddedBy: true,
+        LastModifiedBy: true,
+      },
     });
   }
 
@@ -140,7 +158,8 @@ export class VouchersService {
           await tx.vouPhotos.createMany({
             data: successfulUploads.map((filePath) => ({
               ImageFile: filePath,
-              Voucher_Id: id,
+              ImageFileType: 'webp',
+              VoucherId: id,
             })),
           });
         });
@@ -157,24 +176,24 @@ export class VouchersService {
   }
 
   async deletePhoto(photoId: number): Promise<void> {
-    const photo = await this.prisma.vouPhotos.findUnique({ where: { Vou_Id: photoId } });
+    const photo = await this.prisma.vouPhotos.findUnique({ where: { Id: photoId } });
     if (!photo) throw new NotFoundException(`Photo with ID ${photoId} not found`);
 
     // Delete from DB first, then from FTP
-    await this.prisma.vouPhotos.delete({ where: { Vou_Id: photoId } });
+    await this.prisma.vouPhotos.delete({ where: { Id: photoId } });
     await this.ftpService.deleteFile(photo.ImageFile);
   }
 
   async remove(id: number): Promise<Vouchers> {
-    const voucher = await this.findOne(id);
+    await this.findOne(id);
 
     // Get photos for cleanup
-    const photos = await this.prisma.vouPhotos.findMany({ where: { Voucher_Id: id } });
+    const photos = await this.prisma.vouPhotos.findMany({ where: { VoucherId: id } });
     const filePaths = photos.map((p) => p.ImageFile);
 
     // Delete from DB in transaction
     const deleted = await this.prisma.$transaction(async (tx) => {
-      await tx.vouPhotos.deleteMany({ where: { Voucher_Id: id } });
+      await tx.vouPhotos.deleteMany({ where: { VoucherId: id } });
       return tx.vouchers.delete({ where: { Id: id } });
     });
 
