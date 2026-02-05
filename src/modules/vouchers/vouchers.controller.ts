@@ -25,7 +25,7 @@ export class VouchersController {
   @Get()
   findAll(@Query() query: VoucherQueryDto) {
     const isArchived = query.isArchived !== undefined ? query.isArchived === 'true' : undefined;
-    return this.service.findAll(query, isArchived);
+    return this.service.findAll(query, isArchived, query.search);
   }
 
   @Get('search')

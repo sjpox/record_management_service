@@ -47,11 +47,23 @@ export class VouchersService {
   async findAll(
     pagination: PaginationDto,
     isArchived?: boolean,
+    search?: string,
   ): Promise<PaginatedResult<Vouchers>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    const where = isArchived !== undefined ? { IsArchived: isArchived } : {};
+    const where: Record<string, unknown> = {};
+
+    if (isArchived !== undefined) {
+      where.IsArchived = isArchived;
+    }
+
+    if (search) {
+      where.OR = [
+        { VoucherNo: { contains: search } },
+        { TransactionNo: { contains: search } },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.vouchers.findMany({
