@@ -16,20 +16,25 @@ import { VouchersService } from './vouchers.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { BulkCreateVoucherDto } from './dto/bulk-create-voucher.dto';
-import { PaginationDto } from '../../common/dto/pagination.dto';
+import { VoucherQueryDto } from './dto/voucher-query.dto';
 
 @Controller('vouchers')
 export class VouchersController {
   constructor(private readonly service: VouchersService) {}
 
   @Get()
-  findAll(@Query() pagination: PaginationDto) {
-    return this.service.findAll(pagination);
+  findAll(@Query() query: VoucherQueryDto) {
+    const isArchived = query.isArchived !== undefined ? query.isArchived === 'true' : undefined;
+    return this.service.findAll(query, isArchived);
   }
 
   @Get('search')
-  search(@Query('voucherNo') voucherNo: string) {
-    return this.service.search(voucherNo);
+  search(
+    @Query('voucherNo') voucherNo: string,
+    @Query('isArchived') isArchived?: string,
+  ) {
+    const archived = isArchived !== undefined ? isArchived === 'true' : undefined;
+    return this.service.search(voucherNo, archived);
   }
 
   @Get(':id')
@@ -49,6 +54,11 @@ export class VouchersController {
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateVoucherDto) {
     return this.service.update(id, dto);
+  }
+
+  @Get(':id/photos')
+  getPhotos(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getPhotos(id);
   }
 
   @Post(':id/photos')
@@ -73,5 +83,14 @@ export class VouchersController {
   @Post('bulk')
   bulkCreate(@Body() dto: BulkCreateVoucherDto) {
     return this.service.bulkCreate(dto.vouchers);
+  }
+
+  @Post(':id/archive')
+  @UseInterceptors(FilesInterceptor('photos', 10))
+  archive(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    return this.service.archive(id, files);
   }
 }

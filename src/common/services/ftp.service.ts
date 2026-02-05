@@ -42,7 +42,7 @@ export class FtpService {
   }
 
   private async convertToWebp(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer).webp({ quality: 80 }).toBuffer();
+    return sharp(buffer).webp({ quality: 100 }).toBuffer();
   }
 
   private getWebpFilename(filename: string): string {
@@ -70,7 +70,7 @@ export class FtpService {
   }
 
   buildVoucherPath(category: string, options: VoucherUploadOptions): string {
-    const date = options.date ?? new Date();
+    const date = new Date();
     const year = date.getFullYear().toString();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const voucherNo = options.voucherNo.replace(/[^a-zA-Z0-9-_]/g, '_');

@@ -1,10 +1,41 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
 import { Vouchers } from '@prisma/client';
+
+// Select fields excluding photos
+const voucherSelectFields = {
+  Id: true,
+  VoucherNo: true,
+  TransactionNo: true,
+  Payee: true,
+  Particulars: true,
+  ClaimType: true,
+  Amount: true,
+  DateDisbursed: true,
+  IsArchived: true,
+  DateAdded: true,
+  DateLastUpdated: true,
+  AddedById: true,
+  LastModifiedById: true,
+  AddedBy: {
+    select: {
+      Id: true,
+      FirstName: true,
+      LastName: true,
+    },
+  },
+  LastModifiedBy: {
+    select: {
+      Id: true,
+      FirstName: true,
+      LastName: true,
+    },
+  },
+};
 
 @Injectable()
 export class VouchersService {
@@ -13,25 +44,28 @@ export class VouchersService {
     private ftpService: FtpService,
   ) {}
 
-  async findAll(pagination: PaginationDto): Promise<PaginatedResult<Vouchers>> {
+  async findAll(
+    pagination: PaginationDto,
+    isArchived?: boolean,
+  ): Promise<PaginatedResult<Vouchers>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
+    const where = isArchived !== undefined ? { IsArchived: isArchived } : {};
+
     const [data, total] = await Promise.all([
       this.prisma.vouchers.findMany({
+        where,
         skip,
         take: limit,
-        include: {
-          VouPhotos: true,
-          AddedBy: true,
-          LastModifiedBy: true,
-        },
+        select: voucherSelectFields,
+        orderBy: { DateAdded: 'desc' },
       }),
-      this.prisma.vouchers.count(),
+      this.prisma.vouchers.count({ where }),
     ]);
 
     return {
-      data,
+      data: data as unknown as Vouchers[],
       total,
       page,
       limit,
@@ -42,25 +76,24 @@ export class VouchersService {
   async findOne(id: number): Promise<Vouchers> {
     const item = await this.prisma.vouchers.findUnique({
       where: { Id: id },
-      include: {
-        VouPhotos: true,
-        AddedBy: true,
-        LastModifiedBy: true,
-      },
+      select: voucherSelectFields,
     });
     if (!item) throw new NotFoundException(`Voucher with ID ${id} not found`);
-    return item;
+    return item as unknown as Vouchers;
   }
 
-  async search(voucherNo: string): Promise<Vouchers[]> {
+  async search(voucherNo: string, isArchived?: boolean): Promise<Vouchers[]> {
+    const where: Record<string, unknown> = {
+      VoucherNo: { contains: voucherNo },
+    };
+    if (isArchived !== undefined) {
+      where.IsArchived = isArchived;
+    }
+
     return this.prisma.vouchers.findMany({
-      where: { VoucherNo: { contains: voucherNo } },
-      include: {
-        VouPhotos: true,
-        AddedBy: true,
-        LastModifiedBy: true,
-      },
-    });
+      where,
+      select: voucherSelectFields,
+    }) as unknown as Promise<Vouchers[]>;
   }
 
   async create(dto: CreateVoucherDto, files?: Express.Multer.File[]): Promise<Vouchers> {
@@ -72,9 +105,16 @@ export class VouchersService {
         // 1. Insert voucher data
         const voucher = await tx.vouchers.create({
           data: {
-            ...dto,
+            VoucherNo: dto.VoucherNo,
+            TransactionNo: dto.TransactionNo,
+            Payee: dto.Payee,
+            Particulars: dto.Particulars,
+            ClaimType: dto.ClaimType,
             Amount: dto.Amount,
-            DateDisbursed: dto.DateDisbursed,
+            DateDisbursed: new Date(dto.DateDisbursed),
+            IsArchived: dto.IsArchived ?? false,
+            AddedById: dto.AddedById,
+            LastModifiedById: dto.LastModifiedById,
           },
         });
 
@@ -121,18 +161,15 @@ export class VouchersService {
   async update(id: number, dto: UpdateVoucherDto): Promise<Vouchers> {
     await this.findOne(id);
     const { DateDisbursed, ...rest } = dto;
-    return this.prisma.vouchers.update({
+    const updated = await this.prisma.vouchers.update({
       where: { Id: id },
       data: {
         ...rest,
         DateDisbursed: DateDisbursed ? new Date(DateDisbursed) : undefined,
       },
-      include: {
-        VouPhotos: true,
-        AddedBy: true,
-        LastModifiedBy: true,
-      },
+      select: voucherSelectFields,
     });
+    return updated as unknown as Vouchers;
   }
 
   async addPhotos(id: number, files: Express.Multer.File[]): Promise<{ count: number }> {
@@ -184,6 +221,23 @@ export class VouchersService {
     await this.ftpService.deleteFile(photo.ImageFile);
   }
 
+  async getPhotos(voucherId: number): Promise<{ id: number; imageFile: string; imageFileType: string | null }[]> {
+    await this.findOne(voucherId); // Ensure voucher exists
+    const photos = await this.prisma.vouPhotos.findMany({
+      where: { VoucherId: voucherId },
+      select: {
+        Id: true,
+        ImageFile: true,
+        ImageFileType: true,
+      },
+    });
+    return photos.map((p) => ({
+      id: p.Id,
+      imageFile: p.ImageFile,
+      imageFileType: p.ImageFileType,
+    }));
+  }
+
   async remove(id: number): Promise<Vouchers> {
     await this.findOne(id);
 
@@ -205,38 +259,149 @@ export class VouchersService {
     return deleted;
   }
 
-  async bulkCreate(vouchers: CreateVoucherDto[]): Promise<{ created: number; failed: number; errors: string[] }> {
+  async bulkCreate(vouchers: CreateVoucherDto[]): Promise<{
+    created: number;
+    skipped: number;
+    failed: number;
+    duplicates: string[];
+    errors: string[];
+  }> {
     const errors: string[] = [];
+    const duplicates: string[] = [];
     let created = 0;
+    let skipped = 0;
     let failed = 0;
 
-    // Process in transaction for atomicity
-    await this.prisma.$transaction(async (tx) => {
-      for (const dto of vouchers) {
-        try {
-          await tx.vouchers.create({
-            data: {
-              VoucherNo: dto.VoucherNo,
-              TransactionNo: dto.TransactionNo,
-              Payee: dto.Payee,
-              Particulars: dto.Particulars,
-              ClaimType: dto.ClaimType,
-              Amount: dto.Amount,
-              DateDisbursed: new Date(dto.DateDisbursed),
-              IsArchived: dto.IsArchived ?? false,
-              AddedById: dto.AddedById,
-              LastModifiedById: dto.LastModifiedById,
-            },
-          });
-          created++;
-        } catch (error) {
-          failed++;
-          const message = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`Voucher ${dto.VoucherNo}: ${message}`);
-        }
-      }
+    // Extract all voucher numbers from the input
+    const inputVoucherNos = vouchers.map((v) => v.VoucherNo);
+
+    // Check for existing vouchers in the database
+    const existingVouchers = await this.prisma.vouchers.findMany({
+      where: {
+        VoucherNo: { in: inputVoucherNos },
+      },
+      select: { VoucherNo: true },
     });
 
-    return { created, failed, errors };
+    const existingVoucherNos = new Set(existingVouchers.map((v) => v.VoucherNo));
+
+    // Also check for duplicates within the input itself
+    const seenVoucherNos = new Set<string>();
+    const inputDuplicates = new Set<string>();
+
+    for (const dto of vouchers) {
+      if (seenVoucherNos.has(dto.VoucherNo)) {
+        inputDuplicates.add(dto.VoucherNo);
+      }
+      seenVoucherNos.add(dto.VoucherNo);
+    }
+
+    // Filter out duplicates and process only unique, non-existing vouchers
+    const vouchersToCreate: CreateVoucherDto[] = [];
+    const processedVoucherNos = new Set<string>();
+
+    for (const dto of vouchers) {
+      if (existingVoucherNos.has(dto.VoucherNo)) {
+        if (!duplicates.includes(dto.VoucherNo)) {
+          duplicates.push(dto.VoucherNo);
+        }
+        skipped++;
+      } else if (processedVoucherNos.has(dto.VoucherNo)) {
+        // Duplicate within input - skip subsequent occurrences
+        if (!duplicates.includes(dto.VoucherNo)) {
+          duplicates.push(dto.VoucherNo);
+        }
+        skipped++;
+      } else {
+        vouchersToCreate.push(dto);
+        processedVoucherNos.add(dto.VoucherNo);
+      }
+    }
+
+    // Process valid vouchers in transaction
+    if (vouchersToCreate.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const dto of vouchersToCreate) {
+          try {
+            await tx.vouchers.create({
+              data: {
+                VoucherNo: dto.VoucherNo,
+                TransactionNo: dto.TransactionNo,
+                Payee: dto.Payee,
+                Particulars: dto.Particulars,
+                ClaimType: dto.ClaimType,
+                Amount: dto.Amount,
+                DateDisbursed: new Date(dto.DateDisbursed),
+                IsArchived: dto.IsArchived ?? false,
+                AddedById: dto.AddedById,
+                LastModifiedById: dto.LastModifiedById,
+              },
+            });
+            created++;
+          } catch (error) {
+            failed++;
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            errors.push(`Voucher ${dto.VoucherNo}: ${message}`);
+          }
+        }
+      });
+    }
+
+    return { created, skipped, failed, duplicates, errors };
+  }
+
+  async archive(id: number, files?: Express.Multer.File[]): Promise<Vouchers> {
+    const voucher = await this.findOne(id);
+
+    if (voucher.IsArchived) {
+      throw new BadRequestException('Voucher is already archived');
+    }
+
+    const uploadedFiles: string[] = [];
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 1. Update voucher to archived
+        const updated = await tx.vouchers.update({
+          where: { Id: id },
+          data: { IsArchived: true },
+        });
+
+        // 2. Process and upload files if any
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
+            voucherNo: voucher.VoucherNo,
+            date: voucher.DateDisbursed,
+          });
+
+          const successfulUploads = uploadResults
+            .filter((r) => r.success)
+            .map((r) => r.filePath);
+
+          uploadedFiles.push(...successfulUploads);
+
+          // 3. Insert photo records
+          if (successfulUploads.length > 0) {
+            await tx.vouPhotos.createMany({
+              data: successfulUploads.map((filePath) => ({
+                ImageFile: filePath,
+                ImageFileType: 'webp',
+                VoucherId: id,
+              })),
+            });
+          }
+        }
+
+        return updated;
+      });
+
+      return this.findOne(result.Id);
+    } catch (error) {
+      // Rollback: Clean up uploaded files if transaction failed
+      if (uploadedFiles.length > 0) {
+        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+      }
+      throw error;
+    }
   }
 }
