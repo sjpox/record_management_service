@@ -6,26 +6,26 @@ export class CreateVoucherDto {
   @IsString()
   VoucherNo: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  TrackNo?: string;
+  TransactionNo: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  Payee?: string;
+  Payee: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  Particulars?: string;
+  Particulars: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @Type(() => Number)
   @IsNumber()
-  Amount?: number;
+  Amount: number;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsDateString()
-  DateReleased?: string;
+  DateDisbursed: string;
 
   @IsOptional()
   @IsString()

@@ -4,7 +4,7 @@ import { FtpService } from '../../common/services/ftp.service';
 import { CreateInCommDto } from './dto/create-in-comm.dto';
 import { UpdateInCommDto } from './dto/update-in-comm.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
-import { InComms } from '.prisma/client/client';
+import { InComms } from '@prisma/client';
 
 @Injectable()
 export class InCommsService {
@@ -52,32 +52,55 @@ export class InCommsService {
   }
 
   async create(dto: CreateInCommDto, files?: Express.Multer.File[]): Promise<InComms> {
-    const inComm = await this.prisma.inComms.create({
-      data: {
-        ...dto,
-        DocOrigin_Id: dto.DocOrigin_Id,
-      },
-    });
+    const uploadedFiles: string[] = [];
 
-    if (files && files.length > 0) {
-      const subDir = `in-comms/${inComm.Id}`;
-      const uploadResults = await this.ftpService.uploadMultipleFiles(files, subDir);
-
-      const successfulUploads = uploadResults
-        .filter((r) => r.success)
-        .map((r) => r.filePath);
-
-      if (successfulUploads.length > 0) {
-        await this.prisma.othInPhotos.createMany({
-          data: successfulUploads.map((filePath) => ({
-            ImageFile: filePath,
-            InComm_Id: inComm.Id,
-          })),
+    try {
+      // Start transaction
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 1. Insert inComm data
+        const inComm = await tx.inComms.create({
+          data: {
+            ...dto,
+            DocOrigin_Id: dto.DocOrigin_Id,
+          },
         });
-      }
-    }
 
-    return this.findOne(inComm.Id);
+        // 2. Process and upload files
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'in-comms', {
+            voucherNo: inComm.Id.toString(),
+            date: inComm.DateReceived ? new Date(inComm.DateReceived) : new Date(),
+          });
+
+          const successfulUploads = uploadResults
+            .filter((r) => r.success)
+            .map((r) => r.filePath);
+
+          // Track uploaded files for potential cleanup
+          uploadedFiles.push(...successfulUploads);
+
+          // 3. Insert photo records
+          if (successfulUploads.length > 0) {
+            await tx.othInPhotos.createMany({
+              data: successfulUploads.map((filePath) => ({
+                ImageFile: filePath,
+                InComm_Id: inComm.Id,
+              })),
+            });
+          }
+        }
+
+        return inComm;
+      });
+
+      return this.findOne(result.Id);
+    } catch (error) {
+      // Rollback: Clean up uploaded files if transaction failed
+      if (uploadedFiles.length > 0) {
+        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+      }
+      throw error;
+    }
   }
 
   async update(id: number, dto: UpdateInCommDto): Promise<InComms> {
@@ -90,48 +113,71 @@ export class InCommsService {
   }
 
   async addPhotos(id: number, files: Express.Multer.File[]): Promise<{ count: number }> {
-    await this.findOne(id);
+    const inComm = await this.findOne(id);
+    const uploadedFiles: string[] = [];
 
-    const subDir = `in-comms/${id}`;
-    const uploadResults = await this.ftpService.uploadMultipleFiles(files, subDir);
-
-    const successfulUploads = uploadResults
-      .filter((r) => r.success)
-      .map((r) => r.filePath);
-
-    if (successfulUploads.length > 0) {
-      await this.prisma.othInPhotos.createMany({
-        data: successfulUploads.map((filePath) => ({
-          ImageFile: filePath,
-          InComm_Id: id,
-        })),
+    try {
+      // Upload files first
+      const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'in-comms', {
+        voucherNo: inComm.Id.toString(),
+        date: inComm.DateReceived ? new Date(inComm.DateReceived) : new Date(),
       });
-    }
 
-    return { count: successfulUploads.length };
+      const successfulUploads = uploadResults
+        .filter((r) => r.success)
+        .map((r) => r.filePath);
+
+      uploadedFiles.push(...successfulUploads);
+
+      // Insert photo records in transaction
+      if (successfulUploads.length > 0) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.othInPhotos.createMany({
+            data: successfulUploads.map((filePath) => ({
+              ImageFile: filePath,
+              InComm_Id: id,
+            })),
+          });
+        });
+      }
+
+      return { count: successfulUploads.length };
+    } catch (error) {
+      // Rollback: Clean up uploaded files if DB insert failed
+      if (uploadedFiles.length > 0) {
+        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+      }
+      throw error;
+    }
   }
 
   async deletePhoto(photoId: number): Promise<void> {
     const photo = await this.prisma.othInPhotos.findUnique({ where: { In_Id: photoId } });
     if (!photo) throw new NotFoundException(`Photo with ID ${photoId} not found`);
 
-    await this.ftpService.deleteFile(photo.ImageFile);
+    // Delete from DB first, then from FTP
     await this.prisma.othInPhotos.delete({ where: { In_Id: photoId } });
+    await this.ftpService.deleteFile(photo.ImageFile);
   }
 
   async remove(id: number): Promise<InComms> {
-    const inComm = await this.findOne(id);
+    await this.findOne(id);
 
-    // Delete photos from FTP
+    // Get photos for cleanup
     const photos = await this.prisma.othInPhotos.findMany({ where: { InComm_Id: id } });
-    for (const photo of photos) {
-      await this.ftpService.deleteFile(photo.ImageFile);
+    const filePaths = photos.map((p) => p.ImageFile);
+
+    // Delete from DB in transaction
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      await tx.othInPhotos.deleteMany({ where: { InComm_Id: id } });
+      return tx.inComms.delete({ where: { Id: id } });
+    });
+
+    // Clean up files from FTP after successful DB deletion
+    if (filePaths.length > 0) {
+      await this.ftpService.deleteMultipleFiles(filePaths);
     }
 
-    // Delete photos from DB
-    await this.prisma.othInPhotos.deleteMany({ where: { InComm_Id: id } });
-
-    // Delete inComm
-    return this.prisma.inComms.delete({ where: { Id: id } });
+    return deleted;
   }
 }

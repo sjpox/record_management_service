@@ -52,11 +52,11 @@ model StockRooms {
 model Vouchers {
   Id           Int         @id @default(autoincrement())
   VoucherNo    String      @db.VarChar(50)
-  TrackNo      String?     @db.VarChar(50)
-  Payee        String?     @db.VarChar(255)
-  Particulars  String?     @db.Text
-  Amount       Decimal?    @db.Decimal(18, 2)
-  DateReleased DateTime?   @db.DateTime
+  TransactionNo      String     @db.VarChar(50)
+  Payee        String     @db.VarChar(255)
+  Particulars  String     @db.Text
+  Amount       Decimal    @db.Decimal(18, 2)
+  DateDisbursed DateTime   @db.DateTime
   Folder       String?     @db.VarChar(255)
   RoomNo       String?     @db.VarChar(50)
   DocTag       String?     @db.VarChar(100)

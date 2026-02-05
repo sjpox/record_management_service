@@ -4,7 +4,7 @@ import { FtpService } from '../../common/services/ftp.service';
 import { CreateOutGoingDto } from './dto/create-out-going.dto';
 import { UpdateOutGoingDto } from './dto/update-out-going.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
-import { OutGoings } from '.prisma/client/client';
+import { OutGoings } from '@prisma/client';
 
 @Injectable()
 export class OutGoingsService {
@@ -52,32 +52,55 @@ export class OutGoingsService {
   }
 
   async create(dto: CreateOutGoingDto, files?: Express.Multer.File[]): Promise<OutGoings> {
-    const outGoing = await this.prisma.outGoings.create({
-      data: {
-        ...dto,
-        ResponPerson_Id: dto.ResponPerson_Id,
-      },
-    });
+    const uploadedFiles: string[] = [];
 
-    if (files && files.length > 0) {
-      const subDir = `out-goings/${outGoing.Id}`;
-      const uploadResults = await this.ftpService.uploadMultipleFiles(files, subDir);
-
-      const successfulUploads = uploadResults
-        .filter((r) => r.success)
-        .map((r) => r.filePath);
-
-      if (successfulUploads.length > 0) {
-        await this.prisma.othOutPhotos.createMany({
-          data: successfulUploads.map((filePath) => ({
-            ImageFile: filePath,
-            OutGoing_Id: outGoing.Id,
-          })),
+    try {
+      // Start transaction
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 1. Insert outGoing data
+        const outGoing = await tx.outGoings.create({
+          data: {
+            ...dto,
+            ResponPerson_Id: dto.ResponPerson_Id,
+          },
         });
-      }
-    }
 
-    return this.findOne(outGoing.Id);
+        // 2. Process and upload files
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'out-goings', {
+            voucherNo: outGoing.Id.toString(),
+            date: outGoing.DatePrepared ? new Date(outGoing.DatePrepared) : new Date(),
+          });
+
+          const successfulUploads = uploadResults
+            .filter((r) => r.success)
+            .map((r) => r.filePath);
+
+          // Track uploaded files for potential cleanup
+          uploadedFiles.push(...successfulUploads);
+
+          // 3. Insert photo records
+          if (successfulUploads.length > 0) {
+            await tx.othOutPhotos.createMany({
+              data: successfulUploads.map((filePath) => ({
+                ImageFile: filePath,
+                OutGoing_Id: outGoing.Id,
+              })),
+            });
+          }
+        }
+
+        return outGoing;
+      });
+
+      return this.findOne(result.Id);
+    } catch (error) {
+      // Rollback: Clean up uploaded files if transaction failed
+      if (uploadedFiles.length > 0) {
+        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+      }
+      throw error;
+    }
   }
 
   async update(id: number, dto: UpdateOutGoingDto): Promise<OutGoings> {
@@ -90,48 +113,71 @@ export class OutGoingsService {
   }
 
   async addPhotos(id: number, files: Express.Multer.File[]): Promise<{ count: number }> {
-    await this.findOne(id);
+    const outGoing = await this.findOne(id);
+    const uploadedFiles: string[] = [];
 
-    const subDir = `out-goings/${id}`;
-    const uploadResults = await this.ftpService.uploadMultipleFiles(files, subDir);
-
-    const successfulUploads = uploadResults
-      .filter((r) => r.success)
-      .map((r) => r.filePath);
-
-    if (successfulUploads.length > 0) {
-      await this.prisma.othOutPhotos.createMany({
-        data: successfulUploads.map((filePath) => ({
-          ImageFile: filePath,
-          OutGoing_Id: id,
-        })),
+    try {
+      // Upload files first
+      const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'out-goings', {
+        voucherNo: outGoing.Id.toString(),
+        date: outGoing.DatePrepared ? new Date(outGoing.DatePrepared) : new Date(),
       });
-    }
 
-    return { count: successfulUploads.length };
+      const successfulUploads = uploadResults
+        .filter((r) => r.success)
+        .map((r) => r.filePath);
+
+      uploadedFiles.push(...successfulUploads);
+
+      // Insert photo records in transaction
+      if (successfulUploads.length > 0) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.othOutPhotos.createMany({
+            data: successfulUploads.map((filePath) => ({
+              ImageFile: filePath,
+              OutGoing_Id: id,
+            })),
+          });
+        });
+      }
+
+      return { count: successfulUploads.length };
+    } catch (error) {
+      // Rollback: Clean up uploaded files if DB insert failed
+      if (uploadedFiles.length > 0) {
+        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+      }
+      throw error;
+    }
   }
 
   async deletePhoto(photoId: number): Promise<void> {
     const photo = await this.prisma.othOutPhotos.findUnique({ where: { Out_Id: photoId } });
     if (!photo) throw new NotFoundException(`Photo with ID ${photoId} not found`);
 
-    await this.ftpService.deleteFile(photo.ImageFile);
+    // Delete from DB first, then from FTP
     await this.prisma.othOutPhotos.delete({ where: { Out_Id: photoId } });
+    await this.ftpService.deleteFile(photo.ImageFile);
   }
 
   async remove(id: number): Promise<OutGoings> {
-    const outGoing = await this.findOne(id);
+    await this.findOne(id);
 
-    // Delete photos from FTP
+    // Get photos for cleanup
     const photos = await this.prisma.othOutPhotos.findMany({ where: { OutGoing_Id: id } });
-    for (const photo of photos) {
-      await this.ftpService.deleteFile(photo.ImageFile);
+    const filePaths = photos.map((p) => p.ImageFile);
+
+    // Delete from DB in transaction
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      await tx.othOutPhotos.deleteMany({ where: { OutGoing_Id: id } });
+      return tx.outGoings.delete({ where: { Id: id } });
+    });
+
+    // Clean up files from FTP after successful DB deletion
+    if (filePaths.length > 0) {
+      await this.ftpService.deleteMultipleFiles(filePaths);
     }
 
-    // Delete photos from DB
-    await this.prisma.othOutPhotos.deleteMany({ where: { OutGoing_Id: id } });
-
-    // Delete outGoing
-    return this.prisma.outGoings.delete({ where: { Id: id } });
+    return deleted;
   }
 }
