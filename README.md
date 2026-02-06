@@ -1,11 +1,11 @@
 # Record Management Service
 
-A NestJS backend application for managing records with SQL Server and FTP file uploads.
+A NestJS backend API for managing voucher records with MySQL, JWT authentication, and FTP file storage.
 
 ## Prerequisites
 
 - Node.js 18+
-- SQL Server
+- MySQL / MariaDB
 - FTP Server (for file uploads)
 
 ## Installation
@@ -16,18 +16,23 @@ npm install
 
 ## Configuration
 
-Update the `.env` file with your settings:
+Create a `.env` file in the root directory:
 
 ```env
-# SQL Server connection string
-DATABASE_URL="sqlserver://localhost:1433;database=record_management_service;user=sa;password=YOUR_PASSWORD;encrypt=true;trustServerCertificate=true"
+# MySQL connection string
+DATABASE_URL="mysql://USER:PASSWORD@HOST:PORT/record_management_service"
 
 # FTP Configuration
 FTP_HOST=127.0.0.1
 FTP_PORT=21
-FTP_USER=root
-FTP_PASSWORD=admin
+FTP_USER=ftpuser
+FTP_PASSWORD=your_password
 FTP_UPLOAD_DIR=/ftp
+
+# JWT Configuration
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=900            # Access token expiry in seconds (default: 15 minutes)
+JWT_REFRESH_EXPIRES_IN=604800 # Refresh token expiry in seconds (default: 7 days)
 
 # Server port
 PORT=3000
@@ -39,8 +44,8 @@ PORT=3000
 # Generate Prisma client
 npx prisma generate
 
-# Push schema to database
-npx prisma db push
+# Run migrations
+npx prisma migrate deploy
 ```
 
 ## Running the Application
@@ -54,212 +59,222 @@ npm run build
 npm run start:prod
 ```
 
+## Production Deployment
+
+### 1. Prepare the server
+
+```bash
+# Install Node.js 18+ and MySQL/MariaDB on your server
+# Clone the repository
+git clone <repo-url>
+cd record_management_service
+npm install --production
+```
+
+### 2. Configure environment
+
+```bash
+# Create .env with production values
+cp .env .env.production
+
+# Update with production database, FTP, and JWT settings
+# IMPORTANT: Use a strong JWT_SECRET in production
+```
+
+### 3. Run database migrations
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+### 4. Build and start
+
+```bash
+npm run build
+npm run start:prod
+```
+
+### 5. Process manager (recommended)
+
+```bash
+# Install PM2
+npm install -g pm2
+
+# Start the application
+pm2 start dist/main.js --name record-management-service
+
+# Auto-restart on server reboot
+pm2 startup
+pm2 save
+
+# View logs
+pm2 logs record-management-service
+```
+
 ## API Endpoints
 
 Base URL: `http://localhost:3000/api`
 
-### Lookup Tables
+### Authentication
 
-#### DocOrigins
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/doc-origins` | Get all (paginated) |
-| GET | `/doc-origins/:id` | Get by ID |
-| POST | `/doc-origins` | Create new |
-| PUT | `/doc-origins/:id` | Update |
-| DELETE | `/doc-origins/:id` | Delete |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/auth/login` | No | Login with employeeId and password |
+| POST | `/auth/logout` | Yes | Invalidate current session |
+| GET | `/auth/me` | Yes | Get current authenticated user |
+| POST | `/auth/refresh` | No | Refresh access token |
 
-**Request Body (POST/PUT):**
+**Login:**
 ```json
+POST /api/auth/login
 {
-  "Origin": "string"
+  "employeeId": "EMP001",
+  "password": "password123"
 }
 ```
 
-#### ResponPersons
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/respon-persons` | Get all (paginated) |
-| GET | `/respon-persons/:id` | Get by ID |
-| POST | `/respon-persons` | Create new |
-| PUT | `/respon-persons/:id` | Update |
-| DELETE | `/respon-persons/:id` | Delete |
-
-**Request Body (POST/PUT):**
+**Response:**
 ```json
 {
-  "Name": "string",
-  "ContactNo": "string",
-  "IP_Add": "string",
-  "Email": "string",
-  "Department": "string"
+  "user": {
+    "Id": 1,
+    "FirstName": "John",
+    "LastName": "Doe",
+    "EmployeeId": "EMP001",
+    "Section": "Finance",
+    "Role": "admin",
+    "MobileNo": "09171234567",
+    "Email": "john@example.com",
+    "IsActive": true
+  },
+  "accessToken": "eyJhbG...",
+  "refreshToken": "eyJhbG..."
 }
 ```
 
-#### DocTypes
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/doc-types` | Get all (paginated) |
-| GET | `/doc-types/:id` | Get by ID |
-| POST | `/doc-types` | Create new |
-| PUT | `/doc-types/:id` | Update |
-| DELETE | `/doc-types/:id` | Delete |
-
-**Request Body (POST/PUT):**
+**Refresh Token:**
 ```json
+POST /api/auth/refresh
 {
-  "Type": "string"
+  "refreshToken": "eyJhbG..."
 }
 ```
 
-#### Receivers
+### Users
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/receivers` | Get all (paginated) |
-| GET | `/receivers/:id` | Get by ID |
-| POST | `/receivers` | Create new |
-| PUT | `/receivers/:id` | Update |
-| DELETE | `/receivers/:id` | Delete |
+| GET | `/users` | Get all (paginated) |
+| GET | `/users/:id` | Get by ID |
+| POST | `/users` | Create new user |
+| PUT | `/users/:id` | Update user |
+| POST | `/users/:id/deactivate` | Deactivate user |
+| DELETE | `/users/:id` | Delete user |
 
-**Request Body (POST/PUT):**
+**Create User:**
 ```json
+POST /api/users
 {
-  "Department": "string"
+  "FirstName": "John",
+  "LastName": "Doe",
+  "EmployeeId": "EMP001",
+  "Password": "password123",
+  "Section": "Finance",
+  "Role": "admin",
+  "MobileNo": "09171234567",
+  "Email": "john@example.com"
 }
 ```
 
-#### StockRooms
+### Vouchers (all endpoints require Bearer token)
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/stock-rooms` | Get all (paginated) |
-| GET | `/stock-rooms/:id` | Get by ID |
-| POST | `/stock-rooms` | Create new |
-| PUT | `/stock-rooms/:id` | Update |
-| DELETE | `/stock-rooms/:id` | Delete |
-
-**Request Body (POST/PUT):**
-```json
-{
-  "RoomName": "string"
-}
-```
-
-### Main Tables
-
-#### Vouchers
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/vouchers` | Get all (paginated) |
+| GET | `/vouchers` | Get all (paginated, filterable) |
+| GET | `/vouchers/stats` | Get voucher statistics |
 | GET | `/vouchers/search?voucherNo=` | Search by voucher number |
-| GET | `/vouchers/:id` | Get by ID (includes photos) |
+| GET | `/vouchers/:id` | Get by ID |
+| GET | `/vouchers/:id/details` | Get with photos (base64) |
+| GET | `/vouchers/:id/photos` | Get photo list |
 | POST | `/vouchers` | Create new (multipart/form-data) |
-| PUT | `/vouchers/:id` | Update |
-| POST | `/vouchers/:id/photos` | Add photos (multipart/form-data) |
-| DELETE | `/vouchers/:id/photos/:photoId` | Delete a photo |
-| DELETE | `/vouchers/:id` | Delete voucher and all photos |
+| PUT | `/vouchers/:id` | Update voucher |
+| POST | `/vouchers/bulk` | Bulk create vouchers |
+| POST | `/vouchers/:id/archive` | Archive with photos (multipart/form-data) |
+| POST | `/vouchers/:id/unarchive` | Unarchive and delete all photos |
+| PUT | `/vouchers/:id/photos` | Add/delete photos |
 
-**Request Body (POST/PUT):**
+**Create Voucher (multipart/form-data):**
+```
+VoucherNo: "101-181020-307"
+TransactionNo: "TXN-001"
+Payee: "Juan Dela Cruz"
+Particulars: "Office supplies"
+ClaimType: "Supplies"
+Amount: 5000.00
+DateDisbursed: "2026-02-06"
+photos: [files...]
+```
+
+**Filter Parameters (GET /vouchers):**
+| Parameter | Description |
+|-----------|-------------|
+| `page` | Page number (default: 1) |
+| `limit` | Items per page (default: 10) |
+| `isArchived` | Filter by archived status (`true`/`false`) |
+| `search` | Search across voucher no and transaction no |
+| `voucherNo` | Filter by voucher number |
+| `transactionNo` | Filter by transaction number |
+| `payee` | Filter by payee |
+| `claimType` | Filter by claim type |
+
+**Bulk Create:**
 ```json
+POST /api/vouchers/bulk
 {
-  "VoucherNo": "string (required)",
-  "TrackNo": "string",
-  "Payee": "string",
-  "Particulars": "string",
-  "Amount": "number",
-  "DateReleased": "ISO date string",
-  "Folder": "string",
-  "RoomNo": "string",
-  "DocTag": "string"
+  "vouchers": [
+    {
+      "VoucherNo": "V-001",
+      "TransactionNo": "TXN-001",
+      "Payee": "Juan Dela Cruz",
+      "Particulars": "Office supplies",
+      "Amount": 5000.00,
+      "DateDisbursed": "2026-02-06"
+    }
+  ]
 }
 ```
 
-**Photo Upload (multipart/form-data):**
-- Field name: `photos`
-- Max files: 10
-- Max file size: 10MB
-- Allowed types: JPEG, PNG, GIF, WEBP, PDF
+**Update Photos (multipart/form-data):**
+```
+PUT /api/vouchers/:id/photos
+deletePhotoIds: [1, 2]     (optional - photo IDs to delete)
+photos: [files...]          (optional - new photos to add)
+```
 
-#### InComms
+### Files
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/in-comms` | Get all (paginated) |
-| GET | `/in-comms/search?q=` | Search by particulars |
-| GET | `/in-comms/:id` | Get by ID (includes photos) |
-| POST | `/in-comms` | Create new (multipart/form-data) |
-| PUT | `/in-comms/:id` | Update |
-| POST | `/in-comms/:id/photos` | Add photos (multipart/form-data) |
-| DELETE | `/in-comms/:id/photos/:photoId` | Delete a photo |
-| DELETE | `/in-comms/:id` | Delete record and all photos |
-
-**Request Body (POST/PUT):**
-```json
-{
-  "DateReceived": "string",
-  "DatePrepared": "string",
-  "DocOrigin_Id": "number",
-  "DocType": "string",
-  "Particulars": "string",
-  "RoutedToPA": "string",
-  "dtToPA": "string",
-  "Rerouted": "string",
-  "dtRerouted": "string",
-  "dtFilling": "string",
-  "FilingArea": "string",
-  "Folder": "string",
-  "DocStatus": "string"
-}
-```
-
-#### OutGoings
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/out-goings` | Get all (paginated) |
-| GET | `/out-goings/search?q=` | Search by particulars |
-| GET | `/out-goings/:id` | Get by ID (includes photos) |
-| POST | `/out-goings` | Create new (multipart/form-data) |
-| PUT | `/out-goings/:id` | Update |
-| POST | `/out-goings/:id/photos` | Add photos (multipart/form-data) |
-| DELETE | `/out-goings/:id/photos/:photoId` | Delete a photo |
-| DELETE | `/out-goings/:id` | Delete record and all photos |
-
-**Request Body (POST/PUT):**
-```json
-{
-  "DatePrepared": "string",
-  "DocType": "string",
-  "Particulars": "string",
-  "ReceivedBy": "string",
-  "DateTrans": "string",
-  "ResponPerson_Id": "number",
-  "ActionNeeded": "string",
-  "ActionTime": "string",
-  "dtFilling": "string",
-  "FilingArea": "string",
-  "Folder": "string",
-  "DocStatus": "string",
-  "EncodedBy": "string"
-}
-```
+| GET | `/files/*` | Serve file from FTP by path |
 
 ### Pagination
 
-All list endpoints support pagination via query parameters:
+All list endpoints support pagination:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `page` | 1 | Page number |
 | `limit` | 10 | Items per page |
 
-**Example:** `GET /api/vouchers?page=2&limit=20`
-
 **Response Format:**
 ```json
 {
   "data": [],
   "total": 100,
-  "page": 2,
-  "limit": 20,
-  "totalPages": 5
+  "page": 1,
+  "limit": 10,
+  "totalPages": 10
 }
 ```
 
@@ -267,24 +282,28 @@ All list endpoints support pagination via query parameters:
 
 ```
 src/
-├── main.ts                    # Application entry point
-├── app.module.ts              # Root module
+├── main.ts
+├── app.module.ts
 ├── prisma/
-│   ├── prisma.module.ts       # Global Prisma module
-│   └── prisma.service.ts      # Prisma client service
+│   ├── prisma.module.ts
+│   └── prisma.service.ts
 ├── common/
-│   ├── common.module.ts       # Global common module
+│   ├── common.module.ts
 │   ├── dto/
-│   │   └── pagination.dto.ts  # Pagination DTO
+│   │   └── pagination.dto.ts
 │   └── services/
-│       └── ftp.service.ts     # FTP upload service
+│       └── ftp.service.ts
 └── modules/
-    ├── doc-origins/
-    ├── respon-persons/
-    ├── doc-types/
-    ├── receivers/
-    ├── stock-rooms/
+    ├── auth/
+    │   ├── auth.module.ts
+    │   ├── auth.controller.ts
+    │   ├── auth.service.ts
+    │   ├── dto/
+    │   ├── guards/
+    │   ├── strategies/
+    │   └── decorators/
+    ├── users/
     ├── vouchers/
-    ├── in-comms/
-    └── out-goings/
+    ├── files/
+    └── health/
 ```
