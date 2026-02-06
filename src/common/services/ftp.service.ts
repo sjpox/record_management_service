@@ -237,6 +237,45 @@ export class FtpService {
     }
   }
 
+  async downloadMultipleFiles(filePaths: string[]): Promise<Map<string, Buffer | null>> {
+    if (filePaths.length === 0) return new Map();
+
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const results = new Map<string, Buffer | null>();
+
+    try {
+      await client.access(this.ftpConfig);
+
+      for (const filePath of filePaths) {
+        try {
+          const chunks: Buffer[] = [];
+          const writable = new Writable({
+            write(chunk, _encoding, callback) {
+              chunks.push(chunk);
+              callback();
+            },
+          });
+
+          await client.downloadTo(writable, filePath);
+          results.set(filePath, Buffer.concat(chunks));
+        } catch {
+          results.set(filePath, null);
+        }
+      }
+
+      return results;
+    } catch (err) {
+      console.error('FTP connection error:', err);
+      for (const filePath of filePaths) {
+        results.set(filePath, null);
+      }
+      return results;
+    } finally {
+      client.close();
+    }
+  }
+
   getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes: Record<string, string> = {
