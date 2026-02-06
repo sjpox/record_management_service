@@ -27,6 +27,14 @@ export class CreateUserDto {
   @IsString()
   Role?: string;
 
+  @IsNotEmpty()
+  @IsString()
+  MobileNo: string;
+
+  @IsNotEmpty()
+  @IsString()
+  Email: string;
+
   @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()

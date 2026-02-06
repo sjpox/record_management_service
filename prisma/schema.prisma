@@ -15,6 +15,8 @@ model Users {
   PasswordHash String     @db.VarChar(255) @map("password_hash")
   Section      String?    @db.VarChar(255) @map("section")
   Role         String?    @db.VarChar(100) @map("role")
+  MobileNo     String    @db.VarChar(255) @map("mobile_number")
+  Email        String    @db.VarChar(255) @map("email")
   IsActive     Boolean    @default(true) @map("is_active")
   DateAdded    DateTime   @default(now()) @db.DateTime @map("date_added")
   LastLogin    DateTime?  @db.DateTime @map("last_login")

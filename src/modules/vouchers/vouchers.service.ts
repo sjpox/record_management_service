@@ -155,7 +155,7 @@ export class VouchersService {
       where: { Id: id },
       select: {
         ...voucherSelectFields,
-        VouPhotos: {
+        VoucherImages: {
           select: {
             Id: true,
             ImageFile: true,
@@ -167,10 +167,10 @@ export class VouchersService {
 
     if (!voucher) throw new NotFoundException(`Voucher with ID ${id} not found`);
 
-    const { VouPhotos, ...voucherData } = voucher;
+    const { VoucherImages, ...voucherData } = voucher;
 
     const photos = await Promise.all(
-      VouPhotos.map(async (photo) => {
+      VoucherImages.map(async (photo) => {
         try {
           const buffer = await this.ftpService.downloadFile(photo.ImageFile);
           const mimeType = this.ftpService.getMimeType(photo.ImageFile);
@@ -247,7 +247,7 @@ export class VouchersService {
 
         // 3. Insert photo records
         if (successfulUploads.length > 0) {
-          await this.prisma.vouPhotos.createMany({
+          await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
@@ -305,7 +305,7 @@ export class VouchersService {
     try {
       // 1. Handle deletions first
       if (deletePhotoIds && deletePhotoIds.length > 0) {
-        const photosToDelete = await this.prisma.vouPhotos.findMany({
+        const photosToDelete = await this.prisma.voucherImages.findMany({
           where: {
             Id: { in: deletePhotoIds },
             VoucherId: id,
@@ -315,7 +315,7 @@ export class VouchersService {
         if (photosToDelete.length > 0) {
           filesToDeleteFromFtp.push(...photosToDelete.map((p) => p.ImageFile));
 
-          await this.prisma.vouPhotos.deleteMany({
+          await this.prisma.voucherImages.deleteMany({
             where: {
               Id: { in: photosToDelete.map((p) => p.Id) },
             },
@@ -339,7 +339,7 @@ export class VouchersService {
         uploadedFiles.push(...successfulUploads);
 
         if (successfulUploads.length > 0) {
-          await this.prisma.vouPhotos.createMany({
+          await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
@@ -377,7 +377,7 @@ export class VouchersService {
 
   async getPhotos(voucherId: number): Promise<{ id: number; imageFile: string; imageFileType: string | null }[]> {
     await this.findOne(voucherId); // Ensure voucher exists
-    const photos = await this.prisma.vouPhotos.findMany({
+    const photos = await this.prisma.voucherImages.findMany({
       where: { VoucherId: voucherId },
       select: {
         Id: true,
@@ -396,12 +396,12 @@ export class VouchersService {
     await this.findOne(id);
 
     // Get photos for cleanup
-    const photos = await this.prisma.vouPhotos.findMany({ where: { VoucherId: id } });
+    const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
     const filePaths = photos.map((p) => p.ImageFile);
 
     // Delete photos and set IsArchived to false in transaction
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.vouPhotos.deleteMany({ where: { VoucherId: id } });
+      await tx.voucherImages.deleteMany({ where: { VoucherId: id } });
       return tx.vouchers.update({
         where: { Id: id },
         data: { IsArchived: false, DateArchived: null, LastModifiedById: userId },
@@ -540,7 +540,7 @@ export class VouchersService {
         });
 
         if (uploadedFiles.length > 0) {
-          await tx.vouPhotos.createMany({
+          await tx.voucherImages.createMany({
             data: uploadedFiles.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
