@@ -15,6 +15,8 @@ model Users {
   PasswordHash String     @db.VarChar(255) @map("password_hash")
   Section      String?    @db.VarChar(255) @map("section")
   Role         String?    @db.VarChar(100) @map("role")
+  MobileNo     String    @db.VarChar(255) @map("mobile_number")
+  Email        String    @db.VarChar(255) @map("email")
   IsActive     Boolean    @default(true) @map("is_active")
   DateAdded    DateTime   @default(now()) @db.DateTime @map("date_added")
   LastLogin    DateTime?  @db.DateTime @map("last_login")
@@ -22,44 +24,9 @@ model Users {
   // Relations for Vouchers
   VouchersAdded        Vouchers[] @relation("VoucherAddedBy")
   VouchersModified     Vouchers[] @relation("VoucherModifiedBy")
-  VoucherImagesAdded   VouPhotos[] @relation("VoucherImageAddedBy")
+  VoucherImagesAdded   VoucherImages[] @relation("VoucherImageAddedBy")
 
   @@map("users")
-}
-
-// Lookup Tables
-model DocOrigins {
-  Id       Int       @id @default(autoincrement())
-  Origin   String    @db.VarChar(255)
-  InComms  InComms[]
-
-  @@map("DocOrigins")
-}
-
-model ResponPersons {
-  Id         Int         @id @default(autoincrement())
-  Name       String      @db.VarChar(255)
-  ContactNo  String?     @db.VarChar(50)
-  IP_Add     String?     @db.VarChar(50)
-  Email      String?     @db.VarChar(255)
-  Department String?     @db.VarChar(255)
-  OutGoings  OutGoings[]
-
-  @@map("ResponPersons")
-}
-
-model Receivers {
-  Id         Int    @id @default(autoincrement())
-  Department String @db.VarChar(255)
-
-  @@map("Receivers")
-}
-
-model StockRooms {
-  Id       Int    @id @default(autoincrement())
-  RoomName String @db.VarChar(255)
-
-  @@map("StockRooms")
 }
 
 // Main Document Tables
@@ -73,6 +40,7 @@ model Vouchers {
   Amount          Decimal     @db.Decimal(18, 2) @map("amount")
   DateDisbursed   DateTime    @db.DateTime @map("date_disbursed")
   IsArchived      Boolean     @default(false) @map("is_archived")
+  DateArchived    DateTime?   @db.DateTime @map("date_archived")
   DateAdded       DateTime    @default(now()) @db.DateTime @map("date_added")
   DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
   AddedById       Int?        @map("added_by")
@@ -81,59 +49,15 @@ model Vouchers {
   // Relations
   AddedBy         Users?      @relation("VoucherAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("VoucherModifiedBy", fields: [LastModifiedById], references: [Id])
-  VouPhotos       VouPhotos[]
+  VoucherImages       VoucherImages[]
 
   @@index([AddedById])
   @@index([LastModifiedById])
   @@map("vouchers")
 }
 
-model InComms {
-  Id           Int           @id @default(autoincrement())
-  DateReceived String?       @db.VarChar(50)
-  DatePrepared String?       @db.VarChar(50)
-  DocOrigin_Id Int?
-  DocOrigin    DocOrigins?   @relation(fields: [DocOrigin_Id], references: [Id])
-  DocType      String?       @db.VarChar(100)
-  Particulars  String?       @db.Text
-  RoutedToPA   String?       @db.VarChar(255)
-  dtToPA       String?       @db.VarChar(50)
-  Rerouted     String?       @db.VarChar(255)
-  dtRerouted   String?       @db.VarChar(50)
-  dtFilling    String?       @db.VarChar(50)
-  FilingArea   String?       @db.VarChar(255)
-  Folder       String?       @db.VarChar(255)
-  DocStatus    String?       @db.VarChar(100)
-  OthInPhotos  OthInPhotos[]
-
-  @@index([DocOrigin_Id])
-  @@map("InComms")
-}
-
-model OutGoings {
-  Id              Int            @id @default(autoincrement())
-  DatePrepared    String?        @db.VarChar(50)
-  DocType         String?        @db.VarChar(100)
-  Particulars     String?        @db.Text
-  ReceivedBy      String?        @db.VarChar(255)
-  DateTrans       String?        @db.VarChar(50)
-  ResponPerson_Id Int?
-  ResponPerson    ResponPersons? @relation(fields: [ResponPerson_Id], references: [Id])
-  ActionNeeded    String?        @db.VarChar(255)
-  ActionTime      String?        @db.VarChar(50)
-  dtFilling       String?        @db.VarChar(50)
-  FilingArea      String?        @db.VarChar(255)
-  Folder          String?        @db.VarChar(255)
-  DocStatus       String?        @db.VarChar(100)
-  EncodedBy       String?        @db.VarChar(255)
-  OthOutPhotos    OthOutPhotos[]
-
-  @@index([ResponPerson_Id])
-  @@map("OutGoings")
-}
-
 // Photo Tables
-model VouPhotos {
+model VoucherImages {
   Id            Int      @id @default(autoincrement()) @map("voucher_image_id")
   ImageFile     String   @db.VarChar(500) @map("image_file")
   ImageFileType String?  @db.VarChar(50) @map("image_file_type")
@@ -149,22 +73,3 @@ model VouPhotos {
   @@map("voucher_images")
 }
 
-model OthInPhotos {
-  In_Id     Int     @id @default(autoincrement())
-  ImageFile String  @db.VarChar(500)
-  InComm_Id Int
-  InComm    InComms @relation(fields: [InComm_Id], references: [Id], onDelete: Cascade)
-
-  @@index([InComm_Id])
-  @@map("OthInPhotos")
-}
-
-model OthOutPhotos {
-  Out_Id      Int       @id @default(autoincrement())
-  ImageFile   String    @db.VarChar(500)
-  OutGoing_Id Int
-  OutGoing    OutGoings @relation(fields: [OutGoing_Id], references: [Id], onDelete: Cascade)
-
-  @@index([OutGoing_Id])
-  @@map("OthOutPhotos")
-}

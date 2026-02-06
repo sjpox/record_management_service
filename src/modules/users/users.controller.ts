@@ -23,14 +23,19 @@ export class UsersController {
     return this.service.findAll(pagination);
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.service.findOne(id);
-  }
-
   @Post()
   create(@Body() dto: CreateUserDto) {
     return this.service.create(dto);
+  }
+
+  @Post(':id/deactivate')
+  deactivate(@Param('id', ParseIntPipe) id: number) {
+    return this.service.deactivate(id);
+  }
+
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.service.findOne(id);
   }
 
   @Put(':id')

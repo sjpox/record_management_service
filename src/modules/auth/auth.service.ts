@@ -11,6 +11,8 @@ export interface UserPayload {
   EmployeeId: string;
   Section: string | null;
   Role: string | null;
+  MobileNo: string;
+  Email: string;
   IsActive: boolean;
 }
 
@@ -73,6 +75,8 @@ export class AuthService {
         EmployeeId: user.EmployeeId,
         Section: user.Section,
         Role: user.Role,
+        MobileNo: user.MobileNo,
+        Email: user.Email,
         IsActive: user.IsActive,
       },
       accessToken,
@@ -144,6 +148,8 @@ export class AuthService {
         EmployeeId: true,
         Section: true,
         Role: true,
+        MobileNo: true,
+        Email: true,
         IsActive: true,
       },
     });

@@ -14,6 +14,8 @@ const userSelectFields = {
   EmployeeId: true,
   Section: true,
   Role: true,
+  MobileNo: true,
+  Email: true,
   IsActive: true,
   DateAdded: true,
   LastLogin: true,
@@ -77,6 +79,8 @@ export class UsersService {
         PasswordHash: hashedPassword,
         Section: dto.Section,
         Role: dto.Role,
+        MobileNo: dto.MobileNo,
+        Email: dto.Email,
         IsActive: dto.IsActive ?? true,
       },
       select: userSelectFields,
@@ -104,6 +108,8 @@ export class UsersService {
     }
     if (dto.Section !== undefined) updateData.Section = dto.Section;
     if (dto.Role !== undefined) updateData.Role = dto.Role;
+    if (dto.MobileNo !== undefined) updateData.MobileNo = dto.MobileNo;
+    if (dto.Email !== undefined) updateData.Email = dto.Email;
     if (dto.IsActive !== undefined) updateData.IsActive = dto.IsActive;
 
     return this.prisma.users.update({
@@ -117,6 +123,15 @@ export class UsersService {
     await this.findOne(id);
     return this.prisma.users.delete({
       where: { Id: id },
+      select: userSelectFields,
+    });
+  }
+
+  async deactivate(id: number): Promise<Omit<Users, 'PasswordHash'>> {
+    await this.findOne(id);
+    return this.prisma.users.update({
+      where: { Id: id },
+      data: { IsActive: false },
       select: userSelectFields,
     });
   }

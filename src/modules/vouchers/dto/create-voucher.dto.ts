@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString, IsInt, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsDateString, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateVoucherDto {
@@ -35,14 +35,4 @@ export class CreateVoucherDto {
   @Type(() => Boolean)
   @IsBoolean()
   IsArchived?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  AddedById?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  LastModifiedById?: number;
 }

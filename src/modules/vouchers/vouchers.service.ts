@@ -17,6 +17,7 @@ const voucherSelectFields = {
   Amount: true,
   DateDisbursed: true,
   IsArchived: true,
+  DateArchived: true,
   DateAdded: true,
   DateLastUpdated: true,
   AddedById: true,
@@ -154,7 +155,7 @@ export class VouchersService {
       where: { Id: id },
       select: {
         ...voucherSelectFields,
-        VouPhotos: {
+        VoucherImages: {
           select: {
             Id: true,
             ImageFile: true,
@@ -166,10 +167,10 @@ export class VouchersService {
 
     if (!voucher) throw new NotFoundException(`Voucher with ID ${id} not found`);
 
-    const { VouPhotos, ...voucherData } = voucher;
+    const { VoucherImages, ...voucherData } = voucher;
 
     const photos = await Promise.all(
-      VouPhotos.map(async (photo) => {
+      VoucherImages.map(async (photo) => {
         try {
           const buffer = await this.ftpService.downloadFile(photo.ImageFile);
           const mimeType = this.ftpService.getMimeType(photo.ImageFile);
@@ -211,7 +212,7 @@ export class VouchersService {
     }) as unknown as Promise<Vouchers[]>;
   }
 
-  async create(dto: CreateVoucherDto, files?: Express.Multer.File[]): Promise<Vouchers> {
+  async create(dto: CreateVoucherDto, userId: number, files?: Express.Multer.File[]): Promise<Vouchers> {
     // 1. Create voucher first
     const voucher = await this.prisma.vouchers.create({
       data: {
@@ -223,8 +224,8 @@ export class VouchersService {
         Amount: dto.Amount,
         DateDisbursed: new Date(dto.DateDisbursed),
         IsArchived: dto.IsArchived ?? false,
-        AddedById: dto.AddedById,
-        LastModifiedById: dto.LastModifiedById,
+        AddedById: userId,
+        LastModifiedById: userId,
       },
     });
 
@@ -246,12 +247,12 @@ export class VouchersService {
 
         // 3. Insert photo records
         if (successfulUploads.length > 0) {
-          await this.prisma.vouPhotos.createMany({
+          await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
               VoucherId: voucher.Id,
-              EvidencedById: dto.AddedById,
+              EvidencedById: userId,
             })),
           });
         }
@@ -269,7 +270,7 @@ export class VouchersService {
     }
   }
 
-  async update(id: number, dto: UpdateVoucherDto): Promise<Vouchers> {
+  async update(id: number, dto: UpdateVoucherDto, userId: number): Promise<Vouchers> {
     await this.findOne(id);
     const { DateDisbursed, ...rest } = dto;
     const updated = await this.prisma.vouchers.update({
@@ -277,6 +278,7 @@ export class VouchersService {
       data: {
         ...rest,
         DateDisbursed: DateDisbursed ? new Date(DateDisbursed) : undefined,
+        LastModifiedById: userId,
       },
       select: voucherSelectFields,
     });
@@ -285,6 +287,7 @@ export class VouchersService {
 
   async updatePhotos(
     id: number,
+    userId: number,
     deletePhotoIds?: number[],
     files?: Express.Multer.File[],
   ): Promise<{ added: number; deleted: number }> {
@@ -302,7 +305,7 @@ export class VouchersService {
     try {
       // 1. Handle deletions first
       if (deletePhotoIds && deletePhotoIds.length > 0) {
-        const photosToDelete = await this.prisma.vouPhotos.findMany({
+        const photosToDelete = await this.prisma.voucherImages.findMany({
           where: {
             Id: { in: deletePhotoIds },
             VoucherId: id,
@@ -312,7 +315,7 @@ export class VouchersService {
         if (photosToDelete.length > 0) {
           filesToDeleteFromFtp.push(...photosToDelete.map((p) => p.ImageFile));
 
-          await this.prisma.vouPhotos.deleteMany({
+          await this.prisma.voucherImages.deleteMany({
             where: {
               Id: { in: photosToDelete.map((p) => p.Id) },
             },
@@ -336,11 +339,12 @@ export class VouchersService {
         uploadedFiles.push(...successfulUploads);
 
         if (successfulUploads.length > 0) {
-          await this.prisma.vouPhotos.createMany({
+          await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
               VoucherId: id,
+              EvidencedById: userId,
             })),
           });
 
@@ -348,7 +352,15 @@ export class VouchersService {
         }
       }
 
-      // 3. Delete files from FTP after successful DB operations
+      // 3. Update last modified by
+      if (added > 0 || deleted > 0) {
+        await this.prisma.vouchers.update({
+          where: { Id: id },
+          data: { LastModifiedById: userId },
+        });
+      }
+
+      // 4. Delete files from FTP after successful DB operations
       if (filesToDeleteFromFtp.length > 0) {
         await this.ftpService.deleteMultipleFiles(filesToDeleteFromFtp);
       }
@@ -365,7 +377,7 @@ export class VouchersService {
 
   async getPhotos(voucherId: number): Promise<{ id: number; imageFile: string; imageFileType: string | null }[]> {
     await this.findOne(voucherId); // Ensure voucher exists
-    const photos = await this.prisma.vouPhotos.findMany({
+    const photos = await this.prisma.voucherImages.findMany({
       where: { VoucherId: voucherId },
       select: {
         Id: true,
@@ -380,19 +392,19 @@ export class VouchersService {
     }));
   }
 
-  async remove(id: number): Promise<Vouchers> {
+  async unarchive(id: number, userId: number): Promise<Vouchers> {
     await this.findOne(id);
 
     // Get photos for cleanup
-    const photos = await this.prisma.vouPhotos.findMany({ where: { VoucherId: id } });
+    const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
     const filePaths = photos.map((p) => p.ImageFile);
 
     // Delete photos and set IsArchived to false in transaction
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.vouPhotos.deleteMany({ where: { VoucherId: id } });
+      await tx.voucherImages.deleteMany({ where: { VoucherId: id } });
       return tx.vouchers.update({
         where: { Id: id },
-        data: { IsArchived: false },
+        data: { IsArchived: false, DateArchived: null, LastModifiedById: userId },
         select: voucherSelectFields,
       });
     });
@@ -405,7 +417,7 @@ export class VouchersService {
     return updated as unknown as Vouchers;
   }
 
-  async bulkCreate(vouchers: CreateVoucherDto[]): Promise<{
+  async bulkCreate(vouchers: CreateVoucherDto[], userId: number): Promise<{
     created: number;
     skipped: number;
     failed: number;
@@ -479,8 +491,8 @@ export class VouchersService {
                 Amount: dto.Amount,
                 DateDisbursed: new Date(dto.DateDisbursed),
                 IsArchived: dto.IsArchived ?? false,
-                AddedById: dto.AddedById,
-                LastModifiedById: dto.LastModifiedById,
+                AddedById: userId,
+                LastModifiedById: userId,
               },
             });
             created++;
@@ -496,7 +508,7 @@ export class VouchersService {
     return { created, skipped, failed, duplicates, errors };
   }
 
-  async archive(id: number, files?: Express.Multer.File[]): Promise<Vouchers> {
+  async archive(id: number, userId: number, files?: Express.Multer.File[]): Promise<Vouchers> {
     const voucher = await this.findOne(id);
 
     if (voucher.IsArchived) {
@@ -524,15 +536,16 @@ export class VouchersService {
       const result = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.vouchers.update({
           where: { Id: id },
-          data: { IsArchived: true },
+          data: { IsArchived: true, DateArchived: new Date(), LastModifiedById: userId },
         });
 
         if (uploadedFiles.length > 0) {
-          await tx.vouPhotos.createMany({
+          await tx.voucherImages.createMany({
             data: uploadedFiles.map((filePath) => ({
               ImageFile: filePath,
               ImageFileType: 'webp',
               VoucherId: id,
+              EvidencedById: userId,
             })),
           });
         }
