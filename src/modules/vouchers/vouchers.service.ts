@@ -169,28 +169,28 @@ export class VouchersService {
 
     const { VoucherImages, ...voucherData } = voucher;
 
-    const photos = await Promise.all(
-      VoucherImages.map(async (photo) => {
-        try {
-          const buffer = await this.ftpService.downloadFile(photo.ImageFile);
-          const mimeType = this.ftpService.getMimeType(photo.ImageFile);
-          const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
-          return {
-            id: photo.Id,
-            imageFile: photo.ImageFile,
-            imageFileType: photo.ImageFileType,
-            base64,
-          };
-        } catch {
-          return {
-            id: photo.Id,
-            imageFile: photo.ImageFile,
-            imageFileType: photo.ImageFileType,
-            base64: '',
-          };
-        }
-      }),
-    );
+    const filePaths = VoucherImages.map((p) => p.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const photos = VoucherImages.map((photo) => {
+      const buffer = downloadedFiles.get(photo.ImageFile);
+      if (buffer) {
+        const mimeType = this.ftpService.getMimeType(photo.ImageFile);
+        const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        return {
+          id: photo.Id,
+          imageFile: photo.ImageFile,
+          imageFileType: photo.ImageFileType,
+          base64,
+        };
+      }
+      return {
+        id: photo.Id,
+        imageFile: photo.ImageFile,
+        imageFileType: photo.ImageFileType,
+        base64: '',
+      };
+    });
 
     return {
       voucher: voucherData as unknown as Vouchers,
