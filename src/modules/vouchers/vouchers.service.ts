@@ -534,6 +534,12 @@ export class VouchersService {
 
       // 2. Database operations in transaction (quick operations only)
       const result = await this.prisma.$transaction(async (tx) => {
+        // Re-check inside transaction to prevent race condition
+        const current = await tx.vouchers.findUnique({ where: { Id: id } });
+        if (current?.IsArchived) {
+          throw new BadRequestException('Voucher is already archived');
+        }
+
         const updated = await tx.vouchers.update({
           where: { Id: id },
           data: { IsArchived: true, DateArchived: new Date(), LastModifiedById: userId },
