@@ -3,13 +3,13 @@ import {
   Get,
   Post,
   Put,
-  Delete,
   Body,
   Param,
   Query,
   ParseIntPipe,
   UseInterceptors,
   UploadedFiles,
+  UseGuards,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { VouchersService } from './vouchers.service';
@@ -18,8 +18,11 @@ import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { BulkCreateVoucherDto } from './dto/bulk-create-voucher.dto';
 import { VoucherQueryDto } from './dto/voucher-query.dto';
 import { UpdatePhotosDto } from './dto/update-photos.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('vouchers')
+@UseGuards(JwtAuthGuard)
 export class VouchersController {
   constructor(private readonly service: VouchersService) {}
 
@@ -63,14 +66,19 @@ export class VouchersController {
   @UseInterceptors(FilesInterceptor('photos', 10))
   create(
     @Body() dto: CreateVoucherDto,
+    @CurrentUser() user: { Id: number },
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.create(dto, files);
+    return this.service.create(dto, user.Id, files);
   }
 
   @Put(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateVoucherDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateVoucherDto,
+    @CurrentUser() user: { Id: number },
+  ) {
+    return this.service.update(id, dto, user.Id);
   }
 
   @Get(':id/photos')
@@ -83,27 +91,35 @@ export class VouchersController {
   updatePhotos(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePhotosDto,
+    @CurrentUser() user: { Id: number },
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.updatePhotos(id, dto.deletePhotoIds, files);
+    return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files);
   }
 
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.service.remove(id);
+  @Post(':id/unarchive')
+  unarchive(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { Id: number },
+  ) {
+    return this.service.unarchive(id, user.Id);
   }
 
   @Post('bulk')
-  bulkCreate(@Body() dto: BulkCreateVoucherDto) {
-    return this.service.bulkCreate(dto.vouchers);
+  bulkCreate(
+    @Body() dto: BulkCreateVoucherDto,
+    @CurrentUser() user: { Id: number },
+  ) {
+    return this.service.bulkCreate(dto.vouchers, user.Id);
   }
 
   @Post(':id/archive')
   @UseInterceptors(FilesInterceptor('photos', 10))
   archive(
     @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { Id: number },
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.archive(id, files);
+    return this.service.archive(id, user.Id, files);
   }
 }

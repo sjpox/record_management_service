@@ -38,6 +38,11 @@ export class UsersController {
     return this.service.update(id, dto);
   }
 
+  @Post(':id/deactivate')
+  deactivate(@Param('id', ParseIntPipe) id: number) {
+    return this.service.deactivate(id);
+  }
+
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);

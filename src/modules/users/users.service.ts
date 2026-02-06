@@ -121,6 +121,15 @@ export class UsersService {
     });
   }
 
+  async deactivate(id: number): Promise<Omit<Users, 'PasswordHash'>> {
+    await this.findOne(id);
+    return this.prisma.users.update({
+      where: { Id: id },
+      data: { IsActive: false },
+      select: userSelectFields,
+    });
+  }
+
   async updateLastLogin(id: number): Promise<void> {
     await this.prisma.users.update({
       where: { Id: id },
