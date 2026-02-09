@@ -149,7 +149,7 @@ export class VouchersService {
 
   async findOneWithPhotos(id: number): Promise<{
     voucher: Vouchers;
-    photos: { id: number; imageFile: string; imageFileType: string | null; base64: string }[];
+    photos: { id: number; imageFile: string; imageFileType: string | null; imageFileSize: number | null; base64: string }[];
   }> {
     const voucher = await this.prisma.vouchers.findUnique({
       where: { Id: id },
@@ -160,6 +160,7 @@ export class VouchersService {
             Id: true,
             ImageFile: true,
             ImageFileType: true,
+            ImageFileSize: true,
           },
         },
       },
@@ -181,6 +182,7 @@ export class VouchersService {
           id: photo.Id,
           imageFile: photo.ImageFile,
           imageFileType: photo.ImageFileType,
+          imageFileSize: photo.ImageFileSize,
           base64,
         };
       }
@@ -188,6 +190,7 @@ export class VouchersService {
         id: photo.Id,
         imageFile: photo.ImageFile,
         imageFileType: photo.ImageFileType,
+        imageFileSize: photo.ImageFileSize,
         base64: '',
       };
     });
@@ -239,18 +242,17 @@ export class VouchersService {
           date: voucher.DateDisbursed,
         });
 
-        const successfulUploads = uploadResults
-          .filter((r) => r.success)
-          .map((r) => r.filePath);
+        const successfulUploads = uploadResults.filter((r) => r.success);
 
-        uploadedFiles.push(...successfulUploads);
+        uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
 
         // 3. Insert photo records
         if (successfulUploads.length > 0) {
           await this.prisma.voucherImages.createMany({
-            data: successfulUploads.map((filePath) => ({
-              ImageFile: filePath,
+            data: successfulUploads.map((r) => ({
+              ImageFile: r.filePath,
               ImageFileType: 'webp',
+              ImageFileSize: r.fileSize ?? null,
               VoucherId: voucher.Id,
               EvidencedById: userId,
             })),
@@ -332,17 +334,16 @@ export class VouchersService {
           date: voucher.DateDisbursed,
         });
 
-        const successfulUploads = uploadResults
-          .filter((r) => r.success)
-          .map((r) => r.filePath);
+        const successfulUploads = uploadResults.filter((r) => r.success);
 
-        uploadedFiles.push(...successfulUploads);
+        uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
 
         if (successfulUploads.length > 0) {
           await this.prisma.voucherImages.createMany({
-            data: successfulUploads.map((filePath) => ({
-              ImageFile: filePath,
+            data: successfulUploads.map((r) => ({
+              ImageFile: r.filePath,
               ImageFileType: 'webp',
+              ImageFileSize: r.fileSize ?? null,
               VoucherId: id,
               EvidencedById: userId,
             })),
@@ -375,7 +376,7 @@ export class VouchersService {
     }
   }
 
-  async getPhotos(voucherId: number): Promise<{ id: number; imageFile: string; imageFileType: string | null }[]> {
+  async getPhotos(voucherId: number): Promise<{ id: number; imageFile: string; imageFileType: string | null; imageFileSize: number | null }[]> {
     await this.findOne(voucherId); // Ensure voucher exists
     const photos = await this.prisma.voucherImages.findMany({
       where: { VoucherId: voucherId },
@@ -383,12 +384,14 @@ export class VouchersService {
         Id: true,
         ImageFile: true,
         ImageFileType: true,
+        ImageFileSize: true,
       },
     });
     return photos.map((p) => ({
       id: p.Id,
       imageFile: p.ImageFile,
       imageFileType: p.ImageFileType,
+      imageFileSize: p.ImageFileSize,
     }));
   }
 
@@ -515,7 +518,7 @@ export class VouchersService {
       throw new BadRequestException('Voucher is already archived');
     }
 
-    const uploadedFiles: string[] = [];
+    const uploadedFiles: { filePath: string; fileSize: number }[] = [];
 
     try {
       // 1. Upload files first (outside transaction to avoid timeout)
@@ -525,11 +528,9 @@ export class VouchersService {
           date: voucher.DateDisbursed,
         });
 
-        const successfulUploads = uploadResults
-          .filter((r) => r.success)
-          .map((r) => r.filePath);
+        const successfulUploads = uploadResults.filter((r) => r.success);
 
-        uploadedFiles.push(...successfulUploads);
+        uploadedFiles.push(...successfulUploads.map((r) => ({ filePath: r.filePath, fileSize: r.fileSize ?? 0 })));
       }
 
       // 2. Database operations in transaction (quick operations only)
@@ -547,9 +548,10 @@ export class VouchersService {
 
         if (uploadedFiles.length > 0) {
           await tx.voucherImages.createMany({
-            data: uploadedFiles.map((filePath) => ({
-              ImageFile: filePath,
+            data: uploadedFiles.map((f) => ({
+              ImageFile: f.filePath,
               ImageFileType: 'webp',
+              ImageFileSize: f.fileSize,
               VoucherId: id,
               EvidencedById: userId,
             })),
@@ -563,7 +565,7 @@ export class VouchersService {
     } catch (error) {
       // Rollback: Clean up uploaded files if transaction failed
       if (uploadedFiles.length > 0) {
-        await this.ftpService.deleteMultipleFiles(uploadedFiles);
+        await this.ftpService.deleteMultipleFiles(uploadedFiles.map((f) => f.filePath));
       }
       throw error;
     }
