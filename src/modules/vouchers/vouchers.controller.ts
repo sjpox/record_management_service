@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { VouchersService } from './vouchers.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
@@ -21,12 +22,15 @@ import { UpdatePhotosDto } from './dto/update-photos.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+@ApiTags('Vouchers')
+@ApiBearerAuth()
 @Controller('vouchers')
 @UseGuards(JwtAuthGuard)
 export class VouchersController {
   constructor(private readonly service: VouchersService) {}
 
   @Get()
+  @ApiOperation({ summary: 'Get all vouchers with pagination and filters' })
   findAll(@Query() query: VoucherQueryDto) {
     const isArchived = query.isArchived !== undefined ? query.isArchived === 'true' : undefined;
     const filters = {
@@ -39,11 +43,13 @@ export class VouchersController {
   }
 
   @Get('stats')
+  @ApiOperation({ summary: 'Get voucher statistics' })
   getStats() {
     return this.service.getStats();
   }
 
   @Get('search')
+  @ApiOperation({ summary: 'Search vouchers by voucher number' })
   search(
     @Query('voucherNo') voucherNo: string,
     @Query('isArchived') isArchived?: string,
@@ -53,16 +59,20 @@ export class VouchersController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Get a voucher by ID' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Get(':id/details')
+  @ApiOperation({ summary: 'Get a voucher with photos' })
   findOneWithPhotos(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOneWithPhotos(id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Create a new voucher with optional photos' })
+  @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 10))
   create(
     @Body() dto: CreateVoucherDto,
@@ -73,6 +83,7 @@ export class VouchersController {
   }
 
   @Put(':id')
+  @ApiOperation({ summary: 'Update a voucher' })
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateVoucherDto,
@@ -82,11 +93,14 @@ export class VouchersController {
   }
 
   @Get(':id/photos')
+  @ApiOperation({ summary: 'Get photos for a voucher' })
   getPhotos(@Param('id', ParseIntPipe) id: number) {
     return this.service.getPhotos(id);
   }
 
   @Put(':id/photos')
+  @ApiOperation({ summary: 'Update photos for a voucher' })
+  @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos'))
   updatePhotos(
     @Param('id', ParseIntPipe) id: number,
@@ -98,6 +112,7 @@ export class VouchersController {
   }
 
   @Post(':id/unarchive')
+  @ApiOperation({ summary: 'Unarchive a voucher' })
   unarchive(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { Id: number },
@@ -106,6 +121,7 @@ export class VouchersController {
   }
 
   @Post('bulk')
+  @ApiOperation({ summary: 'Bulk create vouchers' })
   bulkCreate(
     @Body() dto: BulkCreateVoucherDto,
     @CurrentUser() user: { Id: number },
@@ -114,6 +130,8 @@ export class VouchersController {
   }
 
   @Post(':id/archive')
+  @ApiOperation({ summary: 'Archive a voucher with optional photos' })
+  @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 10))
   archive(
     @Param('id', ParseIntPipe) id: number,

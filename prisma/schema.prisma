@@ -61,6 +61,7 @@ model VoucherImages {
   Id            Int      @id @default(autoincrement()) @map("voucher_image_id")
   ImageFile     String   @db.VarChar(500) @map("image_file")
   ImageFileType String?  @db.VarChar(50) @map("image_file_type")
+  ImageFileSize Int?     @map("image_file_size")
   VoucherId     Int      @map("voucher_id")
   EvidencedById Int?     @map("evidenced_by")
 

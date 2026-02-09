@@ -7,6 +7,7 @@ import sharp from 'sharp';
 export interface UploadResult {
   success: boolean;
   filePath: string;
+  fileSize?: number;
   error?: string;
 }
 
@@ -103,7 +104,7 @@ export class FtpService {
       await client.ensureDir(remotePath);
       await client.uploadFrom(Readable.from([processed.buffer]), fullFilePath);
 
-      return { success: true, filePath: fullFilePath };
+      return { success: true, filePath: fullFilePath, fileSize: processed.buffer.length };
     } catch (err) {
       console.error('FTP upload error:', err);
       return {
@@ -142,7 +143,7 @@ export class FtpService {
         const fullFilePath = path.posix.join(remotePath, processed.filename);
         try {
           await client.uploadFrom(Readable.from([processed.buffer]), fullFilePath);
-          results.push({ success: true, filePath: fullFilePath });
+          results.push({ success: true, filePath: fullFilePath, fileSize: processed.buffer.length });
         } catch (err) {
           console.error('FTP upload error:', err);
           results.push({
