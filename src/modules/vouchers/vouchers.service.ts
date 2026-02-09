@@ -521,19 +521,7 @@ export class VouchersService {
     const uploadedFiles: { filePath: string; fileSize: number }[] = [];
 
     try {
-      // 1. Upload files first (outside transaction to avoid timeout)
-      if (files && files.length > 0) {
-        const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
-          voucherNo: voucher.VoucherNo,
-          date: voucher.DateDisbursed,
-        });
-
-        const successfulUploads = uploadResults.filter((r) => r.success);
-
-        uploadedFiles.push(...successfulUploads.map((r) => ({ filePath: r.filePath, fileSize: r.fileSize ?? 0 })));
-      }
-
-      // 2. Database operations in transaction (quick operations only)
+      // 1. DB + FTP in transaction
       const result = await this.prisma.$transaction(async (tx) => {
         // Re-check inside transaction to prevent race condition
         const current = await tx.vouchers.findUnique({ where: { Id: id } });
@@ -546,20 +534,31 @@ export class VouchersService {
           data: { IsArchived: true, DateArchived: new Date(), LastModifiedById: userId },
         });
 
-        if (uploadedFiles.length > 0) {
-          await tx.voucherImages.createMany({
-            data: uploadedFiles.map((f) => ({
-              ImageFile: f.filePath,
-              ImageFileType: 'webp',
-              ImageFileSize: f.fileSize,
-              VoucherId: id,
-              EvidencedById: userId,
-            })),
+        // 2. Upload files inside transaction
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
+            voucherNo: voucher.VoucherNo,
+            date: voucher.DateDisbursed,
           });
+
+          const successfulUploads = uploadResults.filter((r) => r.success);
+          uploadedFiles.push(...successfulUploads.map((r) => ({ filePath: r.filePath, fileSize: r.fileSize ?? 0 })));
+
+          if (successfulUploads.length > 0) {
+            await tx.voucherImages.createMany({
+              data: uploadedFiles.map((f) => ({
+                ImageFile: f.filePath,
+                ImageFileType: 'webp',
+                ImageFileSize: f.fileSize,
+                VoucherId: id,
+                EvidencedById: userId,
+              })),
+            });
+          }
         }
 
         return updated;
-      });
+      }, { timeout: 30000 });
 
       return this.findOne(result.Id);
     } catch (error) {
