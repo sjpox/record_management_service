@@ -398,9 +398,11 @@ export class VouchersService {
   async unarchive(id: number, userId: number): Promise<Vouchers> {
     await this.findOne(id);
 
-    // Get photos for cleanup
+    // Get photos to determine the FTP folder path
     const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
-    const filePaths = photos.map((p) => p.ImageFile);
+    const folderPaths = new Set(
+      photos.map((p) => p.ImageFile.substring(0, p.ImageFile.lastIndexOf('/'))),
+    );
 
     // Delete photos and set IsArchived to false in transaction
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -412,9 +414,11 @@ export class VouchersService {
       });
     });
 
-    // Clean up files from FTP after successful DB operations
-    if (filePaths.length > 0) {
-      await this.ftpService.deleteMultipleFiles(filePaths);
+    // Clean up folders from FTP after successful DB operations
+    for (const folder of folderPaths) {
+      if (folder) {
+        await this.ftpService.deleteDirectory(folder);
+      }
     }
 
     return updated as unknown as Vouchers;

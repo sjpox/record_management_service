@@ -225,6 +225,22 @@ export class FtpService {
     }
   }
 
+  async deleteDirectory(dirPath: string): Promise<boolean> {
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+
+    try {
+      await client.access(this.ftpConfig);
+      await client.removeDir(dirPath);
+      return true;
+    } catch (err) {
+      console.error('FTP delete directory error:', err);
+      return false;
+    } finally {
+      client.close();
+    }
+  }
+
   getFileUrl(filePath: string): string {
     return `${this.apiBaseUrl}/api/files${filePath}`;
   }
