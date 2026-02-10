@@ -53,13 +53,26 @@ export class FtpService {
       .toBuffer();
   }
 
+  private async convertToPng(buffer: Buffer): Promise<Buffer> {
+    return sharp(buffer)
+      .png({
+        compressionLevel: 6,
+      })
+      .toBuffer();
+  }
+
   private getWebpFilename(filename: string): string {
     const ext = path.extname(filename);
     return filename.replace(ext, '.webp');
   }
 
+  private getPngFilename(filename: string): string {
+    const ext = path.extname(filename);
+    return filename.replace(ext, '.png');
+  }
+
   /**
-   * Process file: convert to WebP if image
+   * Process file: convert to PNG if image (lossless for text/number clarity)
    */
   private async processFile(file: Express.Multer.File): Promise<ProcessedFile> {
     let buffer = file.buffer;
@@ -67,8 +80,8 @@ export class FtpService {
 
     if (this.isImage(filename)) {
       try {
-        buffer = await this.convertToWebp(file.buffer);
-        filename = this.getWebpFilename(filename);
+        buffer = await this.convertToPng(file.buffer);
+        filename = this.getPngFilename(filename);
       } catch (err) {
         console.error('Image conversion error:', err);
       }
