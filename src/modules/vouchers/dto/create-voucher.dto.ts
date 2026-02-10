@@ -8,10 +8,10 @@ export class CreateVoucherDto {
   @IsString()
   VoucherNo: string;
 
-  @ApiProperty({ example: 'TXN-2024-001' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ example: 'TXN-2024-001' })
+  @IsOptional()
   @IsString()
-  TransactionNo: string;
+  TransactionNo?: string;
 
   @ApiProperty({ example: 'Juan Dela Cruz' })
   @IsNotEmpty()

@@ -33,7 +33,7 @@ model Users {
 model Vouchers {
   Id              Int         @id @default(autoincrement()) @map("voucher_id")
   VoucherNo       String      @db.VarChar(50) @map("voucher_no")
-  TransactionNo   String      @db.VarChar(50) @map("transaction_no")
+  TransactionNo   String?     @db.VarChar(50) @map("transaction_no")
   Payee           String      @db.VarChar(255) @map("payee")
   Particulars     String      @db.Text @map("particulars")
   ClaimType       String?     @db.VarChar(255) @map("claim_type")
