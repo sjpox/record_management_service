@@ -3,6 +3,7 @@ import { Client } from 'basic-ftp';
 import * as path from 'path';
 import { Readable, Writable } from 'stream';
 import sharp from 'sharp';
+import PDFDocument from 'pdfkit';
 
 export interface UploadResult {
   success: boolean;
@@ -53,13 +54,37 @@ export class FtpService {
       .toBuffer();
   }
 
+  private async convertToPng(buffer: Buffer): Promise<Buffer> {
+    return sharp(buffer)
+      .png({
+        compressionLevel: 6,
+      })
+      .toBuffer();
+  }
+
+  private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
+    return sharp(buffer)
+      .jpeg({ quality: 85 })
+      .toBuffer();
+  }
+
   private getWebpFilename(filename: string): string {
     const ext = path.extname(filename);
     return filename.replace(ext, '.webp');
   }
 
+  private getPngFilename(filename: string): string {
+    const ext = path.extname(filename);
+    return filename.replace(ext, '.png');
+  }
+
+  private getJpegFilename(filename: string): string {
+    const ext = path.extname(filename);
+    return filename.replace(ext, '.jpg');
+  }
+
   /**
-   * Process file: convert to WebP if image
+   * Process file: convert to JPEG if image
    */
   private async processFile(file: Express.Multer.File): Promise<ProcessedFile> {
     let buffer = file.buffer;
@@ -67,8 +92,8 @@ export class FtpService {
 
     if (this.isImage(filename)) {
       try {
-        buffer = await this.convertToWebp(file.buffer);
-        filename = this.getWebpFilename(filename);
+        buffer = await this.convertToJpeg(file.buffer);
+        filename = this.getJpegFilename(filename);
       } catch (err) {
         console.error('Image conversion error:', err);
       }
@@ -212,6 +237,22 @@ export class FtpService {
     }
   }
 
+  async deleteDirectory(dirPath: string): Promise<boolean> {
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+
+    try {
+      await client.access(this.ftpConfig);
+      await client.removeDir(dirPath);
+      return true;
+    } catch (err) {
+      console.error('FTP delete directory error:', err);
+      return false;
+    } finally {
+      client.close();
+    }
+  }
+
   getFileUrl(filePath: string): string {
     return `${this.apiBaseUrl}/api/files${filePath}`;
   }
@@ -275,6 +316,40 @@ export class FtpService {
     } finally {
       client.close();
     }
+  }
+
+  /**
+   * Compose multiple image buffers into a single PDF
+   */
+  async composeToPdf(imageBuffers: Buffer[]): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const processImages = async () => {
+        for (const imgBuffer of imageBuffers) {
+          // Resize to max 1200px width and convert to JPEG for smaller PDF size
+          const resized = await sharp(imgBuffer)
+            .resize({ width: 1200, withoutEnlargement: true })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+
+          const metadata = await sharp(resized).metadata();
+          const width = metadata.width ?? 595;
+          const height = metadata.height ?? 842;
+
+          doc.addPage({ size: [width, height], margin: 0 });
+          doc.image(resized, 0, 0, { width, height });
+        }
+        doc.end();
+      };
+
+      processImages().catch(reject);
+    });
   }
 
   getMimeType(filePath: string): string {

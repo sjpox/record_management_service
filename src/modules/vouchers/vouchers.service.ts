@@ -251,7 +251,7 @@ export class VouchersService {
           await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((r) => ({
               ImageFile: r.filePath,
-              ImageFileType: 'webp',
+              ImageFileType: 'jpeg',
               ImageFileSize: r.fileSize ?? null,
               VoucherId: voucher.Id,
               EvidencedById: userId,
@@ -342,7 +342,7 @@ export class VouchersService {
           await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((r) => ({
               ImageFile: r.filePath,
-              ImageFileType: 'webp',
+              ImageFileType: 'jpeg',
               ImageFileSize: r.fileSize ?? null,
               VoucherId: id,
               EvidencedById: userId,
@@ -398,9 +398,11 @@ export class VouchersService {
   async unarchive(id: number, userId: number): Promise<Vouchers> {
     await this.findOne(id);
 
-    // Get photos for cleanup
+    // Get photos to determine the FTP folder path
     const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
-    const filePaths = photos.map((p) => p.ImageFile);
+    const folderPaths = new Set(
+      photos.map((p) => p.ImageFile.substring(0, p.ImageFile.lastIndexOf('/'))),
+    );
 
     // Delete photos and set IsArchived to false in transaction
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -412,9 +414,11 @@ export class VouchersService {
       });
     });
 
-    // Clean up files from FTP after successful DB operations
-    if (filePaths.length > 0) {
-      await this.ftpService.deleteMultipleFiles(filePaths);
+    // Clean up folders from FTP after successful DB operations
+    for (const folder of folderPaths) {
+      if (folder) {
+        await this.ftpService.deleteDirectory(folder);
+      }
     }
 
     return updated as unknown as Vouchers;
@@ -511,6 +515,47 @@ export class VouchersService {
     return { created, skipped, failed, duplicates, errors };
   }
 
+  async composeDocument(id: number): Promise<{
+    fileType: string;
+    fileSize: number;
+    base64: string;
+  }> {
+    const voucher = await this.prisma.vouchers.findUnique({
+      where: { Id: id },
+      include: { VoucherImages: true },
+    });
+
+    if (!voucher) throw new NotFoundException(`Voucher with ID ${id} not found`);
+
+    if (voucher.VoucherImages.length === 0) {
+      throw new BadRequestException('Voucher has no images to compose');
+    }
+
+    // Download all images from FTP
+    const filePaths = voucher.VoucherImages.map((img) => img.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const imageBuffers: Buffer[] = [];
+    for (const filePath of filePaths) {
+      const buffer = downloadedFiles.get(filePath);
+      if (buffer) imageBuffers.push(buffer);
+    }
+
+    if (imageBuffers.length === 0) {
+      throw new BadRequestException('Failed to download images for PDF composition');
+    }
+
+    // Compose into PDF (no FTP save, just return for printing)
+    const pdfBuffer = await this.ftpService.composeToPdf(imageBuffers);
+    const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
+
+    return {
+      fileType: 'pdf',
+      fileSize: pdfBuffer.length,
+      base64,
+    };
+  }
+
   async archive(id: number, userId: number, files?: Express.Multer.File[]): Promise<Vouchers> {
     const voucher = await this.findOne(id);
 
@@ -548,7 +593,7 @@ export class VouchersService {
             await tx.voucherImages.createMany({
               data: uploadedFiles.map((f) => ({
                 ImageFile: f.filePath,
-                ImageFileType: 'webp',
+                ImageFileType: 'jpeg',
                 ImageFileSize: f.fileSize,
                 VoucherId: id,
                 EvidencedById: userId,
