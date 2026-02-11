@@ -129,6 +129,12 @@ export class VouchersController {
     return this.service.bulkCreate(dto.vouchers, user.Id);
   }
 
+  @Post(':id/compose-pdf')
+  @ApiOperation({ summary: 'Compose voucher images into a PDF for printing' })
+  composePdf(@Param('id', ParseIntPipe) id: number) {
+    return this.service.composeDocument(id);
+  }
+
   @Post(':id/archive')
   @ApiOperation({ summary: 'Archive a voucher with optional photos' })
   @ApiConsumes('multipart/form-data')
