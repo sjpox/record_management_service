@@ -251,7 +251,7 @@ export class VouchersService {
           await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((r) => ({
               ImageFile: r.filePath,
-              ImageFileType: 'jpeg',
+              ImageFileType: 'png',
               ImageFileSize: r.fileSize ?? null,
               VoucherId: voucher.Id,
               EvidencedById: userId,
@@ -342,7 +342,7 @@ export class VouchersService {
           await this.prisma.voucherImages.createMany({
             data: successfulUploads.map((r) => ({
               ImageFile: r.filePath,
-              ImageFileType: 'jpeg',
+              ImageFileType: 'png',
               ImageFileSize: r.fileSize ?? null,
               VoucherId: id,
               EvidencedById: userId,
@@ -593,7 +593,7 @@ export class VouchersService {
             await tx.voucherImages.createMany({
               data: uploadedFiles.map((f) => ({
                 ImageFile: f.filePath,
-                ImageFileType: 'jpeg',
+                ImageFileType: 'png',
                 ImageFileSize: f.fileSize,
                 VoucherId: id,
                 EvidencedById: userId,

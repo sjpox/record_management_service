@@ -92,8 +92,8 @@ export class FtpService {
 
     if (this.isImage(filename)) {
       try {
-        buffer = await this.convertToJpeg(file.buffer);
-        filename = this.getJpegFilename(filename);
+        buffer = await this.convertToPng(file.buffer);
+        filename = this.getPngFilename(filename);
       } catch (err) {
         console.error('Image conversion error:', err);
       }
@@ -332,10 +332,10 @@ export class FtpService {
 
       const processImages = async () => {
         for (const imgBuffer of imageBuffers) {
-          // Resize to max 1200px width and convert to JPEG for smaller PDF size
+          // Resize to max 1200px width, convert to PNG (PDFKit only supports JPEG/PNG)
           const resized = await sharp(imgBuffer)
             .resize({ width: 1200, withoutEnlargement: true })
-            .jpeg({ quality: 85 })
+            .png({ compressionLevel: 6 })
             .toBuffer();
 
           const metadata = await sharp(resized).metadata();
