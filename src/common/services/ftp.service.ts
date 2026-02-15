@@ -62,8 +62,28 @@ export class FtpService {
       .toBuffer();
   }
 
-  private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
+  /**
+   * Apply document scan effect: normalize, contrast, sharpen, brighten
+   */
+  private async scanEffect(buffer: Buffer): Promise<Buffer> {
     return sharp(buffer)
+      .normalize()
+      .linear(1.3, -(128 * 0.3))
+      .modulate({ brightness: 1.1 })
+      .sharpen({ sigma: 2.0, m1: 1.5, m2: 1.0 })
+      .toBuffer();
+  }
+
+  async enhanceImage(buffer: Buffer): Promise<Buffer> {
+    const scanned = await this.scanEffect(buffer);
+    return sharp(scanned)
+      .png({ compressionLevel: 6 })
+      .toBuffer();
+  }
+
+  private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
+    const scanned = await this.scanEffect(buffer);
+    return sharp(scanned)
       .jpeg({ quality: 85 })
       .toBuffer();
   }
@@ -321,7 +341,7 @@ export class FtpService {
   /**
    * Compose multiple image buffers into a single PDF
    */
-  async composeToPdf(imageBuffers: Buffer[]): Promise<Buffer> {
+  async composeToPdf(imageBuffers: Buffer[], isBlackAndWhite = false): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const chunks: Buffer[] = [];
@@ -332,18 +352,22 @@ export class FtpService {
 
       const processImages = async () => {
         for (const imgBuffer of imageBuffers) {
-          // Resize to max 1200px width and convert to JPEG for smaller PDF size
-          const resized = await sharp(imgBuffer)
-            .resize({ width: 1200, withoutEnlargement: true })
-            .jpeg({ quality: 85 })
+          // Resize and apply scan effect for print
+          let pipeline = sharp(imgBuffer)
+            .resize({ width: 1200, withoutEnlargement: true });
+          if (isBlackAndWhite) pipeline = pipeline.grayscale();
+          const resized = await pipeline.toBuffer();
+          const scanned = await this.scanEffect(resized);
+          const enhanced = await sharp(scanned)
+            .png({ compressionLevel: 6 })
             .toBuffer();
 
-          const metadata = await sharp(resized).metadata();
+          const metadata = await sharp(enhanced).metadata();
           const width = metadata.width ?? 595;
           const height = metadata.height ?? 842;
 
           doc.addPage({ size: [width, height], margin: 0 });
-          doc.image(resized, 0, 0, { width, height });
+          doc.image(enhanced, 0, 0, { width, height });
         }
         doc.end();
       };

@@ -173,27 +173,30 @@ export class VouchersService {
     const filePaths = VoucherImages.map((p) => p.ImageFile);
     const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
 
-    const photos = VoucherImages.map((photo) => {
-      const buffer = downloadedFiles.get(photo.ImageFile);
-      if (buffer) {
-        const mimeType = this.ftpService.getMimeType(photo.ImageFile);
-        const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
+    const photos = await Promise.all(
+      VoucherImages.map(async (photo) => {
+        const buffer = downloadedFiles.get(photo.ImageFile);
+        if (buffer) {
+          const enhanced = await this.ftpService.enhanceImage(buffer);
+          const mimeType = this.ftpService.getMimeType(photo.ImageFile);
+          const base64 = `data:${mimeType};base64,${enhanced.toString('base64')}`;
+          return {
+            id: photo.Id,
+            imageFile: photo.ImageFile,
+            imageFileType: photo.ImageFileType,
+            imageFileSize: photo.ImageFileSize,
+            base64,
+          };
+        }
         return {
           id: photo.Id,
           imageFile: photo.ImageFile,
           imageFileType: photo.ImageFileType,
           imageFileSize: photo.ImageFileSize,
-          base64,
+          base64: '',
         };
-      }
-      return {
-        id: photo.Id,
-        imageFile: photo.ImageFile,
-        imageFileType: photo.ImageFileType,
-        imageFileSize: photo.ImageFileSize,
-        base64: '',
-      };
-    });
+      }),
+    );
 
     return {
       voucher: voucherData as unknown as Vouchers,
@@ -515,7 +518,7 @@ export class VouchersService {
     return { created, skipped, failed, duplicates, errors };
   }
 
-  async composeDocument(id: number): Promise<{
+  async composeDocument(id: number, isBlackAndWhite = false): Promise<{
     fileType: string;
     fileSize: number;
     base64: string;
@@ -546,7 +549,7 @@ export class VouchersService {
     }
 
     // Compose into PDF (no FTP save, just return for printing)
-    const pdfBuffer = await this.ftpService.composeToPdf(imageBuffers);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageBuffers, isBlackAndWhite);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {
