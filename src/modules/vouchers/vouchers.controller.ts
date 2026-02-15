@@ -131,8 +131,12 @@ export class VouchersController {
 
   @Post(':id/compose-pdf')
   @ApiOperation({ summary: 'Compose voucher images into a PDF for printing' })
-  composePdf(@Param('id', ParseIntPipe) id: number) {
-    return this.service.composeDocument(id);
+  composePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('color') color?: string,
+  ) {
+    const isBlackAndWhite = color === 'bw';
+    return this.service.composeDocument(id, isBlackAndWhite);
   }
 
   @Post(':id/archive')
