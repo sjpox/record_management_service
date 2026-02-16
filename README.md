@@ -2,6 +2,35 @@
 
 A NestJS backend API for managing voucher records with MySQL, JWT authentication, and FTP file storage.
 
+## Release Notes
+
+### v1.4.0
+
+**New Features**
+- Compose PDF endpoint (`POST /vouchers/:id/compose-pdf`) — compose voucher images into a single A4-sized PDF for printing
+  - Select specific images via `imageIds` in request body
+  - Client-side crop support per image via `crops` parameter
+  - Black & white print option via `?color=bw` query parameter
+  - Optional document scan effect via `?scanEffect=true` query parameter
+  - Images are fit-to-frame on A4 pages (595x842pt) with aspect ratio preserved and centered
+  - Returns base64-encoded PDF in response (no server-side storage)
+- Crop and replace images (`PUT /vouchers/:id/photos`) — crop existing images and overwrite originals on FTP via `crops` parameter
+- Document scan effect for image display — enhanced image rendering when viewing voucher details (`GET /vouchers/:id/details`)
+  - Applies normalize, contrast boost, brightness adjustment, and sharpening
+- FTP data integrity check — voucher list and details endpoints now return `ftpFileCount` alongside DB image count (`_count.VoucherImages`) to detect data discrepancies between the database and FTP storage
+
+**Changes**
+- Uploaded images are now stored as JPEG (quality 85) without any scan effect applied — preserves original image fidelity
+- Image display (`GET /vouchers/:id/details`) applies scan effect enhancement and returns images as PNG
+- Added `pdfkit` dependency for PDF generation
+- Added `sharp` image processing pipeline with scan effect (normalize, contrast, brightness, sharpen)
+
+### v1.3.0
+
+- Added scan effect, enhance image, and black & white option
+- Use PNG format with backward compatibility
+- Added pdfkit library
+
 ## Prerequisites
 
 - Node.js 18+
@@ -200,9 +229,10 @@ POST /api/users
 | POST | `/vouchers` | Create new (multipart/form-data) |
 | PUT | `/vouchers/:id` | Update voucher |
 | POST | `/vouchers/bulk` | Bulk create vouchers |
+| POST | `/vouchers/:id/compose-pdf` | Compose images into PDF for printing |
 | POST | `/vouchers/:id/archive` | Archive with photos (multipart/form-data) |
 | POST | `/vouchers/:id/unarchive` | Unarchive and delete all photos |
-| PUT | `/vouchers/:id/photos` | Add/delete photos |
+| PUT | `/vouchers/:id/photos` | Add/delete/crop photos |
 
 **Create Voucher (multipart/form-data):**
 ```
@@ -245,11 +275,62 @@ POST /api/vouchers/bulk
 }
 ```
 
+**Compose PDF (print voucher images):**
+```
+POST /api/vouchers/:id/compose-pdf?color=bw&scanEffect=true
+```
+```json
+{
+  "imageIds": [1, 2, 3],
+  "crops": [
+    {
+      "imageId": 1,
+      "left": 50,
+      "top": 100,
+      "width": 800,
+      "height": 600
+    }
+  ]
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | Query | Set to `bw` for black & white print |
+| `scanEffect` | Query | Set to `true` to apply document scan effect |
+| `imageIds` | Body | Array of image IDs to include in PDF |
+| `crops` | Body | Optional array of crop areas per image |
+
+**Response:**
+```json
+{
+  "fileType": "application/pdf",
+  "fileSize": 123456,
+  "base64": "JVBERi0xLjMK..."
+}
+```
+
 **Update Photos (multipart/form-data):**
 ```
 PUT /api/vouchers/:id/photos
 deletePhotoIds: [1, 2]     (optional - photo IDs to delete)
 photos: [files...]          (optional - new photos to add)
+crops: [...]                (optional - crop and replace existing images)
+```
+
+**Crop and replace example (JSON body):**
+```json
+{
+  "crops": [
+    {
+      "imageId": 5,
+      "left": 50,
+      "top": 100,
+      "width": 800,
+      "height": 600
+    }
+  ]
+}
 ```
 
 ### Files

@@ -5,6 +5,11 @@ import { Readable, Writable } from 'stream';
 import sharp from 'sharp';
 import PDFDocument from 'pdfkit';
 
+export interface ImageEntry {
+  buffer: Buffer;
+  crop?: { left: number; top: number; width: number; height: number };
+}
+
 export interface UploadResult {
   success: boolean;
   filePath: string;
@@ -70,7 +75,7 @@ export class FtpService {
       .normalize()
       .linear(1.3, -(128 * 0.3))
       .modulate({ brightness: 1.1 })
-      .sharpen({ sigma: 2.0, m1: 1.5, m2: 1.0 })
+      .sharpen({ sigma: 1.0, m1: 1.0, m2: 0.5 })
       .toBuffer();
   }
 
@@ -82,8 +87,7 @@ export class FtpService {
   }
 
   private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
-    const scanned = await this.scanEffect(buffer);
-    return sharp(scanned)
+    return sharp(buffer)
       .jpeg({ quality: 85 })
       .toBuffer();
   }
@@ -341,7 +345,7 @@ export class FtpService {
   /**
    * Compose multiple image buffers into a single PDF
    */
-  async composeToPdf(imageBuffers: Buffer[], isBlackAndWhite = false): Promise<Buffer> {
+  async composeToPdf(imageEntries: ImageEntry[], isBlackAndWhite = false, isScanEffect = false): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const chunks: Buffer[] = [];
@@ -351,29 +355,126 @@ export class FtpService {
       doc.on('error', reject);
 
       const processImages = async () => {
-        for (const imgBuffer of imageBuffers) {
-          // Resize and apply scan effect for print
-          let pipeline = sharp(imgBuffer)
-            .resize({ width: 1200, withoutEnlargement: true });
+        const pageWidth = 595;
+        const pageHeight = 842;
+
+        for (const entry of imageEntries) {
+          // Crop if specified, then resize and apply effects
+          let pipeline = sharp(entry.buffer);
+          if (entry.crop) {
+            pipeline = pipeline.extract({
+              left: Math.round(entry.crop.left),
+              top: Math.round(entry.crop.top),
+              width: Math.round(entry.crop.width),
+              height: Math.round(entry.crop.height),
+            });
+          }
+          pipeline = pipeline.resize({ width: 1200, withoutEnlargement: true });
           if (isBlackAndWhite) pipeline = pipeline.grayscale();
           const resized = await pipeline.toBuffer();
-          const scanned = await this.scanEffect(resized);
-          const enhanced = await sharp(scanned)
+          const processed = isScanEffect ? await this.scanEffect(resized) : resized;
+          const enhanced = await sharp(processed)
             .png({ compressionLevel: 6 })
             .toBuffer();
 
           const metadata = await sharp(enhanced).metadata();
-          const width = metadata.width ?? 595;
-          const height = metadata.height ?? 842;
+          const imgWidth = metadata.width ?? pageWidth;
+          const imgHeight = metadata.height ?? pageHeight;
 
-          doc.addPage({ size: [width, height], margin: 0 });
-          doc.image(enhanced, 0, 0, { width, height });
+          // Fit to frame: scale image to fill A4 page while maintaining aspect ratio
+          const scaleX = pageWidth / imgWidth;
+          const scaleY = pageHeight / imgHeight;
+          const scale = Math.min(scaleX, scaleY);
+          const fitWidth = imgWidth * scale;
+          const fitHeight = imgHeight * scale;
+
+          // Center on page
+          const x = (pageWidth - fitWidth) / 2;
+          const y = (pageHeight - fitHeight) / 2;
+
+          doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
+          doc.image(enhanced, x, y, { width: fitWidth, height: fitHeight });
         }
         doc.end();
       };
 
       processImages().catch(reject);
     });
+  }
+
+  async cropAndReupload(
+    filePath: string,
+    crop: { left: number; top: number; width: number; height: number },
+  ): Promise<{ success: boolean; fileSize: number }> {
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+
+    try {
+      await client.access(this.ftpConfig);
+
+      // Download original file
+      const chunks: Buffer[] = [];
+      const writable = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(chunk);
+          callback();
+        },
+      });
+      await client.downloadTo(writable, filePath);
+      const original = Buffer.concat(chunks);
+
+      // Crop and convert to JPEG
+      const cropped = await sharp(original)
+        .extract({
+          left: Math.round(crop.left),
+          top: Math.round(crop.top),
+          width: Math.round(crop.width),
+          height: Math.round(crop.height),
+        })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+
+      // Overwrite the original file
+      await client.uploadFrom(Readable.from([cropped]), filePath);
+
+      return { success: true, fileSize: cropped.length };
+    } catch (err) {
+      console.error('FTP crop and reupload error:', err);
+      return { success: false, fileSize: 0 };
+    } finally {
+      client.close();
+    }
+  }
+
+  async checkFilesExist(filePaths: string[]): Promise<Map<string, boolean>> {
+    if (filePaths.length === 0) return new Map();
+
+    const client = new Client();
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const results = new Map<string, boolean>();
+
+    try {
+      await client.access(this.ftpConfig);
+
+      for (const filePath of filePaths) {
+        try {
+          await client.size(filePath);
+          results.set(filePath, true);
+        } catch {
+          results.set(filePath, false);
+        }
+      }
+
+      return results;
+    } catch (err) {
+      console.error('FTP connection error:', err);
+      for (const filePath of filePaths) {
+        results.set(filePath, false);
+      }
+      return results;
+    } finally {
+      client.close();
+    }
   }
 
   getMimeType(filePath: string): string {
