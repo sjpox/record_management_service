@@ -36,6 +36,11 @@ const voucherSelectFields = {
       LastName: true,
     },
   },
+  _count: {
+    select: {
+      VoucherImages: true,
+    },
+  },
 };
 
 @Injectable()
@@ -123,14 +128,28 @@ export class VouchersService {
         where,
         skip,
         take: limit,
-        select: voucherSelectFields,
+        select: {
+          ...voucherSelectFields,
+          VoucherImages: {
+            select: { ImageFile: true },
+          },
+        },
         orderBy: { DateAdded: 'desc' },
       }),
       this.prisma.vouchers.count({ where }),
     ]);
 
+    // Collect all file paths across all vouchers for a single FTP check
+    const allFilePaths = data.flatMap((v) => v.VoucherImages.map((img) => img.ImageFile));
+    const fileExistence = await this.ftpService.checkFilesExist(allFilePaths);
+
+    const mappedData = data.map(({ VoucherImages, ...voucher }) => ({
+      ...voucher,
+      ftpFileCount: VoucherImages.filter((img) => fileExistence.get(img.ImageFile) === true).length,
+    }));
+
     return {
-      data: data as unknown as Vouchers[],
+      data: mappedData as unknown as Vouchers[],
       total,
       page,
       limit,
@@ -149,6 +168,8 @@ export class VouchersService {
 
   async findOneWithPhotos(id: number): Promise<{
     voucher: Vouchers;
+    photoCount: number;
+    ftpFileCount: number;
     photos: { id: number; imageFile: string; imageFileType: string | null; imageFileSize: number | null; base64: string }[];
   }> {
     const voucher = await this.prisma.vouchers.findUnique({
@@ -198,8 +219,12 @@ export class VouchersService {
       }),
     );
 
+    const ftpFileCount = filePaths.filter((fp) => downloadedFiles.get(fp) !== null).length;
+
     return {
       voucher: voucherData as unknown as Vouchers,
+      photoCount: VoucherImages.length,
+      ftpFileCount,
       photos,
     };
   }
@@ -295,7 +320,8 @@ export class VouchersService {
     userId: number,
     deletePhotoIds?: number[],
     files?: Express.Multer.File[],
-  ): Promise<{ added: number; deleted: number }> {
+    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+  ): Promise<{ added: number; deleted: number; cropped: number }> {
     const voucher = await this.findOne(id);
 
     if (!voucher.IsArchived) {
@@ -304,6 +330,7 @@ export class VouchersService {
 
     let added = 0;
     let deleted = 0;
+    let cropped = 0;
     const uploadedFiles: string[] = [];
     const filesToDeleteFromFtp: string[] = [];
 
@@ -356,20 +383,51 @@ export class VouchersService {
         }
       }
 
-      // 3. Update last modified by
-      if (added > 0 || deleted > 0) {
+      // 3. Handle crops (replace originals with cropped versions)
+      if (crops && crops.length > 0) {
+        const cropImageIds = crops.map((c) => c.imageId);
+        const imagesToCrop = await this.prisma.voucherImages.findMany({
+          where: {
+            Id: { in: cropImageIds },
+            VoucherId: id,
+          },
+        });
+
+        for (const image of imagesToCrop) {
+          const crop = crops.find((c) => c.imageId === image.Id);
+          if (!crop) continue;
+
+          const result = await this.ftpService.cropAndReupload(image.ImageFile, {
+            left: crop.left,
+            top: crop.top,
+            width: crop.width,
+            height: crop.height,
+          });
+
+          if (result.success) {
+            await this.prisma.voucherImages.update({
+              where: { Id: image.Id },
+              data: { ImageFileSize: result.fileSize },
+            });
+            cropped++;
+          }
+        }
+      }
+
+      // 4. Update last modified by
+      if (added > 0 || deleted > 0 || cropped > 0) {
         await this.prisma.vouchers.update({
           where: { Id: id },
           data: { LastModifiedById: userId },
         });
       }
 
-      // 4. Delete files from FTP after successful DB operations
+      // 5. Delete files from FTP after successful DB operations
       if (filesToDeleteFromFtp.length > 0) {
         await this.ftpService.deleteMultipleFiles(filesToDeleteFromFtp);
       }
 
-      return { added, deleted };
+      return { added, deleted, cropped };
     } catch (error) {
       // Rollback: Clean up newly uploaded files if operation failed
       if (uploadedFiles.length > 0) {
@@ -518,7 +576,13 @@ export class VouchersService {
     return { created, skipped, failed, duplicates, errors };
   }
 
-  async composeDocument(id: number, isBlackAndWhite = false): Promise<{
+  async composeDocument(
+    id: number,
+    isBlackAndWhite = false,
+    isScanEffect = false,
+    imageIds: number[] = [],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+  ): Promise<{
     fileType: string;
     fileSize: number;
     base64: string;
@@ -530,26 +594,41 @@ export class VouchersService {
 
     if (!voucher) throw new NotFoundException(`Voucher with ID ${id} not found`);
 
-    if (voucher.VoucherImages.length === 0) {
-      throw new BadRequestException('Voucher has no images to compose');
+    // Filter to selected images only
+    const selectedImages = imageIds.length > 0
+      ? voucher.VoucherImages.filter((img) => imageIds.includes(img.Id))
+      : voucher.VoucherImages;
+
+    if (selectedImages.length === 0) {
+      throw new BadRequestException('No images found for the selected IDs');
     }
 
-    // Download all images from FTP
-    const filePaths = voucher.VoucherImages.map((img) => img.ImageFile);
+    // Download selected images from FTP
+    const filePaths = selectedImages.map((img) => img.ImageFile);
     const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
 
-    const imageBuffers: Buffer[] = [];
-    for (const filePath of filePaths) {
-      const buffer = downloadedFiles.get(filePath);
-      if (buffer) imageBuffers.push(buffer);
+    // Build crop map keyed by imageId
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    if (crops) {
+      for (const crop of crops) {
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+      }
     }
 
-    if (imageBuffers.length === 0) {
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    for (const img of selectedImages) {
+      const buffer = downloadedFiles.get(img.ImageFile);
+      if (buffer) {
+        imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+      }
+    }
+
+    if (imageEntries.length === 0) {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
     // Compose into PDF (no FTP save, just return for printing)
-    const pdfBuffer = await this.ftpService.composeToPdf(imageBuffers, isBlackAndWhite);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {

@@ -19,6 +19,7 @@ import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { BulkCreateVoucherDto } from './dto/bulk-create-voucher.dto';
 import { VoucherQueryDto } from './dto/voucher-query.dto';
 import { UpdatePhotosDto } from './dto/update-photos.dto';
+import { ComposePdfDto } from './dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -108,7 +109,7 @@ export class VouchersController {
     @CurrentUser() user: { Id: number },
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files);
+    return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files, dto.crops);
   }
 
   @Post(':id/unarchive')
@@ -134,9 +135,12 @@ export class VouchersController {
   composePdf(
     @Param('id', ParseIntPipe) id: number,
     @Query('color') color?: string,
+    @Query('scanEffect') scanEffect?: string,
+    @Body() dto?: ComposePdfDto,
   ) {
     const isBlackAndWhite = color === 'bw';
-    return this.service.composeDocument(id, isBlackAndWhite);
+    const isScanEffect = scanEffect === 'true';
+    return this.service.composeDocument(id, isBlackAndWhite, isScanEffect, dto?.imageIds ?? [], dto?.crops);
   }
 
   @Post(':id/archive')
