@@ -16,7 +16,7 @@ export class ReportsService {
     private readonly ftpService: FtpService,
   ) {}
 
-  @Cron('*/10 * * * * *', { name: 'voucher-image-discrepancy-report' })
+  @Cron('0 8,17 * * *', { name: 'voucher-image-discrepancy-report' })
   async handleDiscrepancyReport(): Promise<void> {
     this.logger.log('Starting voucher image discrepancy report...');
     const startTime = Date.now();
