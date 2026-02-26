@@ -38,16 +38,16 @@ export class CreateUserDto {
   @IsString()
   Role?: string;
 
-  @ApiPropertyOptional({ example: '+639171234567' })
-  @IsOptional()
+  @ApiProperty({ example: '+639171234567' })
+  @IsNotEmpty()
   @IsString()
   @Matches(/^\+639\d{9}$/, { message: 'Mobile number must be in +63 format (e.g. +639171234567)' })
-  MobileNo?: string;
+  MobileNo: string;
 
-  @ApiPropertyOptional({ example: 'john.doe@example.com' })
-  @IsOptional()
+  @ApiProperty({ example: 'john.doe@example.com' })
+  @IsNotEmpty()
   @IsEmail({}, { message: 'Invalid email address' })
-  Email?: string;
+  Email: string;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
