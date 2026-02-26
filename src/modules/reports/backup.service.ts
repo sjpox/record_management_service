@@ -2,10 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Client as FtpClient } from 'basic-ftp';
-import { execFile } from 'child_process';
+import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as zlib from 'zlib';
 import { Writable } from 'stream';
 import * as archiver from 'archiver';
 
@@ -35,6 +36,7 @@ export class BackupService {
   };
 
   private readonly ftpBaseDir = process.env.FTP_UPLOAD_DIR ?? '/ftp';
+  private readonly mysqldumpPath = process.env.MYSQLDUMP_PATH ?? 'mysqldump';
   private readonly localBackupDir = process.env.BACKUP_LOCAL_DIR ?? path.join(process.cwd(), 'backups');
 
   private async uploadToS3OrLocal(
@@ -57,7 +59,8 @@ export class BackupService {
       return { destination: 's3', location: `s3://${this.bucket}/${s3Key}` };
     } catch (s3Error) {
       this.logger.warn(
-        `S3 upload failed, saving locally: ${s3Error instanceof Error ? s3Error.message : s3Error}`,
+        `S3 upload failed, saving locally`,
+        s3Error instanceof Error ? s3Error.stack : s3Error,
       );
 
       const localDir = path.join(this.localBackupDir, path.dirname(s3Key));
@@ -96,7 +99,7 @@ export class BackupService {
     };
   }
 
-  @Cron('0 2,14 * * *', { name: 'database-backup' })
+  @Cron('30 12,17 * * *', { name: 'database-backup' })
   async handleBackup(): Promise<void> {
     this.logger.log('Starting database backup...');
     const startTime = Date.now();
@@ -106,19 +109,18 @@ export class BackupService {
 
     try {
       const db = this.parseDatabaseUrl();
-      const filename = `${db.database}-${timestamp}.sql.gz`;
+      const sqlFilename = `${db.database}-${timestamp}.sql`;
+      const sqlPath = path.join(os.tmpdir(), sqlFilename);
+      const filename = `${sqlFilename}.gz`;
       tempFile = path.join(os.tmpdir(), filename);
 
-      // Run mysqldump piped to gzip
+      // Run mysqldump (cross-platform)
+      const dumpCmd = `"${this.mysqldumpPath}" -h ${db.host} -P ${db.port} -u ${db.user} --single-transaction --routines --triggers "${db.database}"`;
       await new Promise<void>((resolve, reject) => {
-        execFile(
-          '/bin/sh',
-          [
-            '-c',
-            `mysqldump -h ${db.host} -P ${db.port} -u ${db.user} --single-transaction --routines --triggers "${db.database}" | gzip > "${tempFile}"`,
-          ],
+        exec(
+          `${dumpCmd} > "${sqlPath}"`,
           { env: { ...process.env, MYSQL_PWD: db.password } },
-          (error, _stdout, stderr) => {
+          (error: Error | null, _stdout: string, stderr: string) => {
             if (error) {
               reject(new Error(`mysqldump failed: ${stderr || error.message}`));
             } else {
@@ -127,6 +129,12 @@ export class BackupService {
           },
         );
       });
+
+      // Gzip using Node.js zlib (cross-platform)
+      const sqlBuffer = fs.readFileSync(sqlPath);
+      const gzipped = zlib.gzipSync(sqlBuffer);
+      fs.writeFileSync(tempFile, gzipped);
+      fs.unlinkSync(sqlPath);
 
       // Upload to S3, fallback to local
       const dateDir = new Date().toISOString().slice(0, 10);
@@ -152,7 +160,7 @@ export class BackupService {
     }
   }
 
-  @Cron('0 3,15 * * *', { name: 'ftp-files-backup' })
+  @Cron('30 12,17 * * *', { name: 'ftp-files-backup' })
   async handleFtpBackup(): Promise<void> {
     this.logger.log('Starting FTP files backup to S3...');
     const startTime = Date.now();
