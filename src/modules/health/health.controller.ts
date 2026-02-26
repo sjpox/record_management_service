@@ -1,11 +1,15 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MaintenanceService } from './maintenance.service';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly maintenanceService: MaintenanceService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Check application and database health' })
@@ -25,5 +29,16 @@ export class HealthController {
     }
 
     return status;
+  }
+
+  @Get('status')
+  @ApiOperation({ summary: 'Check maintenance mode status' })
+  getStatus() {
+    return {
+      maintenance: this.maintenanceService.isActive(),
+      message: this.maintenanceService.isActive()
+        ? this.maintenanceService.getMessage()
+        : '',
+    };
   }
 }

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { HealthModule } from './modules/health/health.module';
@@ -7,6 +7,7 @@ import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
   imports: [
@@ -20,4 +21,11 @@ import { ReportsModule } from './modules/reports/reports.module';
     ReportsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(MaintenanceMiddleware)
+      .exclude('health/(.*)', 'health')
+      .forRoutes('*');
+  }
+}
