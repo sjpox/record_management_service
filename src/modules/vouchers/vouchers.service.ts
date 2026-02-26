@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
@@ -48,6 +49,7 @@ export class VouchersService {
   constructor(
     private prisma: PrismaService,
     private ftpService: FtpService,
+    private auditService: AuditService,
   ) {}
 
   async getStats(): Promise<{
@@ -288,7 +290,16 @@ export class VouchersService {
         }
       }
 
-      return this.findOne(voucher.Id);
+      const result = await this.findOne(voucher.Id);
+
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: voucher.Id,
+        action: 'CREATE',
+        userId,
+      });
+
+      return result;
     } catch (error) {
       // Rollback: Clean up uploaded files and delete voucher if photo upload failed
       if (uploadedFiles.length > 0) {
@@ -301,7 +312,7 @@ export class VouchersService {
   }
 
   async update(id: number, dto: UpdateVoucherDto, userId: number): Promise<Vouchers> {
-    await this.findOne(id);
+    const before = await this.findOne(id);
     const { DateDisbursed, ...rest } = dto;
     const updated = await this.prisma.vouchers.update({
       where: { Id: id },
@@ -312,6 +323,15 @@ export class VouchersService {
       },
       select: voucherSelectFields,
     });
+
+    this.auditService.log({
+      entityType: 'Voucher',
+      entityId: id,
+      action: 'UPDATE',
+      userId,
+      changes: { before, after: updated },
+    });
+
     return updated as unknown as Vouchers;
   }
 
@@ -427,6 +447,16 @@ export class VouchersService {
         await this.ftpService.deleteMultipleFiles(filesToDeleteFromFtp);
       }
 
+      if (added > 0 || deleted > 0 || cropped > 0) {
+        this.auditService.log({
+          entityType: 'Voucher',
+          entityId: id,
+          action: 'UPDATE_PHOTOS',
+          userId,
+          changes: { after: { added, deleted, cropped } },
+        });
+      }
+
       return { added, deleted, cropped };
     } catch (error) {
       // Rollback: Clean up newly uploaded files if operation failed
@@ -481,6 +511,13 @@ export class VouchersService {
         await this.ftpService.deleteDirectory(folder);
       }
     }
+
+    this.auditService.log({
+      entityType: 'Voucher',
+      entityId: id,
+      action: 'UNARCHIVE',
+      userId,
+    });
 
     return updated as unknown as Vouchers;
   }
@@ -686,6 +723,13 @@ export class VouchersService {
 
         return updated;
       }, { timeout: 30000 });
+
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'ARCHIVE',
+        userId,
+      });
 
       return this.findOne(result.Id);
     } catch (error) {
