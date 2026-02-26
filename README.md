@@ -4,6 +4,32 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.5.0
+
+**New Features**
+- Automated database backup — scheduled cron job dumps MySQL/MariaDB via `mysqldump`, compresses to `.sql.gz`, and uploads to AWS S3
+- Automated FTP files backup — scheduled cron job downloads all files from FTP, packages them into a `.zip` archive, and uploads to S3
+- Both backups run twice daily (12:30 PM and 5:30 PM)
+- Local fallback — when S3 is unreachable (e.g. no internet), backups are saved to a configurable local directory
+- Manual backup API endpoints (JWT-protected):
+  - `POST /backup/database` — trigger database backup
+  - `POST /backup/ftp` — trigger FTP files backup
+  - `POST /backup/all` — trigger both backups in parallel
+- Cross-platform support — backup service works on both Windows and macOS/Linux (uses Node.js `zlib` instead of shell commands, configurable `MYSQLDUMP_PATH`)
+- Image discrepancy reports — scheduled generation of data discrepancy reports between database records and FTP storage
+
+**New Environment Variables**
+- `BACKUP_S3_BUCKET` — S3 bucket for backups
+- `BACKUP_S3_PREFIX` — S3 key prefix for database backups
+- `BACKUP_S3_FTP_PREFIX` — S3 key prefix for FTP backups
+- `BACKUP_LOCAL_DIR` — local fallback directory when S3 is unavailable
+- `MYSQLDUMP_PATH` — path to `mysqldump` binary (defaults to `mysqldump`)
+- `REPORTS_OUTPUT_DIR` — directory for discrepancy report output
+
+**Dependencies Added**
+- `@aws-sdk/client-s3` — AWS S3 uploads
+- `archiver` — zip archive creation for FTP backups
+
 ### v1.4.0
 
 **New Features**
@@ -333,6 +359,14 @@ crops: [...]                (optional - crop and replace existing images)
 }
 ```
 
+### Backup (all endpoints require Bearer token)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/backup/database` | Trigger database backup manually |
+| POST | `/backup/ftp` | Trigger FTP files backup manually |
+| POST | `/backup/all` | Trigger both backups in parallel |
+
 ### Files
 
 | Method | Endpoint | Description |
@@ -385,6 +419,11 @@ src/
     │   └── decorators/
     ├── users/
     ├── vouchers/
+    ├── reports/
+    │   ├── reports.module.ts
+    │   ├── reports.service.ts
+    │   ├── backup.service.ts
+    │   └── backup.controller.ts
     ├── files/
     └── health/
 ```
