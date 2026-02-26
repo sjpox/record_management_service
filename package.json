@@ -3,6 +3,7 @@
   "version": "1.4.0",
   "description": "Record Management Service API",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.998.0",
     "@nestjs/common": "^11.1.13",
     "@nestjs/core": "^11.1.13",
     "@nestjs/jwt": "^11.0.2",
