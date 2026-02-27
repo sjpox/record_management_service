@@ -1,6 +1,6 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Request, Response, NextFunction } from 'express';
-import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MaintenanceService } from './maintenance.service';
 
@@ -9,6 +9,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
   constructor(
     private readonly maintenanceService: MaintenanceService,
     private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -16,11 +17,11 @@ export class MaintenanceMiddleware implements NestMiddleware {
       return next();
     }
 
+    // Allow admin users to bypass maintenance mode
     const token = this.extractToken(req);
     if (token) {
       try {
-        const secret = process.env.JWT_SECRET ?? 'default-secret-change-me';
-        const payload = jwt.verify(token, secret) as unknown as { sub: number };
+        const payload = this.jwtService.verify(token) as { sub: number };
         const user = await this.prisma.users.findUnique({
           where: { Id: payload.sub },
           select: { Role: true, IsActive: true },
