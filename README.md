@@ -17,6 +17,13 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
   - `POST /backup/all` — trigger both backups in parallel
 - Cross-platform support — backup service works on both Windows and macOS/Linux (uses Node.js `zlib` instead of shell commands, configurable `MYSQLDUMP_PATH`)
 - Image discrepancy reports — scheduled generation of data discrepancy reports between database records and FTP storage
+- Audit logging — tracks all mutations across auth, users, vouchers, backups, and maintenance with before/after change tracking, user ID, and IP address
+  - `GET /audit-logs` — query audit logs with pagination and filters (entityType, userId, action, date range)
+- Maintenance mode with WebSocket — real-time maintenance status broadcasting via Socket.IO
+  - `POST /health/maintenance` — toggle maintenance mode on/off (JWT-protected)
+  - WebSocket namespace `/maintenance` — clients receive `maintenanceStatus` events in real-time
+  - Admin users bypass maintenance mode automatically
+- Maintenance mode audit logging — all maintenance toggles are recorded with before/after state
 
 **New Environment Variables**
 - `BACKUP_S3_BUCKET` — S3 bucket for backups
@@ -25,10 +32,14 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 - `BACKUP_LOCAL_DIR` — local fallback directory when S3 is unavailable
 - `MYSQLDUMP_PATH` — path to `mysqldump` binary (defaults to `mysqldump`)
 - `REPORTS_OUTPUT_DIR` — directory for discrepancy report output
+- `MAINTENANCE_MODE` — enable/disable maintenance mode (`true`/`false`)
+- `MAINTENANCE_MESSAGE` — custom maintenance message displayed to users
 
 **Dependencies Added**
 - `@aws-sdk/client-s3` — AWS S3 uploads
 - `archiver` — zip archive creation for FTP backups
+- `@nestjs/websockets` — WebSocket gateway support
+- `@nestjs/platform-socket.io` — Socket.IO adapter for NestJS
 
 ### v1.4.0
 
@@ -367,6 +378,32 @@ crops: [...]                (optional - crop and replace existing images)
 | POST | `/backup/ftp` | Trigger FTP files backup manually |
 | POST | `/backup/all` | Trigger both backups in parallel |
 
+### Health & Maintenance
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/health` | No | Check application and database health |
+| GET | `/health/status` | No | Check maintenance mode status |
+| POST | `/health/maintenance` | Yes | Toggle maintenance mode on/off |
+
+**WebSocket** — Connect to `/maintenance` namespace to receive real-time `maintenanceStatus` events.
+
+### Audit Logs (all endpoints require Bearer token)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/audit-logs` | Query audit logs (paginated, filterable) |
+
+**Filter Parameters (GET /audit-logs):**
+| Parameter | Description |
+|-----------|-------------|
+| `entityType` | Filter by entity (User, Voucher, Auth, Backup, Maintenance) |
+| `entityId` | Filter by entity ID |
+| `userId` | Filter by user who performed the action |
+| `action` | Filter by action type |
+| `startDate` | Filter from date |
+| `endDate` | Filter to date |
+
 ### Files
 
 | Method | Endpoint | Description |
@@ -424,6 +461,17 @@ src/
     │   ├── reports.service.ts
     │   ├── backup.service.ts
     │   └── backup.controller.ts
+    ├── audit/
+    │   ├── audit.module.ts
+    │   ├── audit.service.ts
+    │   ├── audit.controller.ts
+    │   └── dto/
     ├── files/
     └── health/
+        ├── health.module.ts
+        ├── health.controller.ts
+        ├── maintenance.service.ts
+        ├── maintenance.gateway.ts
+        ├── maintenance.middleware.ts
+        └── dto/
 ```
