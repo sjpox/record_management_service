@@ -7,12 +7,14 @@ import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
   imports: [
     PrismaModule,
     CommonModule,
+    AuditModule,
     HealthModule,
     AuthModule,
     VouchersModule,

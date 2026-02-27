@@ -25,6 +25,7 @@ model Users {
   VouchersAdded        Vouchers[] @relation("VoucherAddedBy")
   VouchersModified     Vouchers[] @relation("VoucherModifiedBy")
   VoucherImagesAdded   VoucherImages[] @relation("VoucherImageAddedBy")
+  AuditLogs            AuditLog[]
 
   @@map("users")
 }
@@ -72,5 +73,24 @@ model VoucherImages {
   @@index([VoucherId])
   @@index([EvidencedById])
   @@map("voucher_images")
+}
+
+// Audit Logs
+model AuditLog {
+  Id         Int      @id @default(autoincrement()) @map("audit_log_id")
+  EntityType String   @db.VarChar(50) @map("entity_type")
+  EntityId   Int?     @map("entity_id")
+  Action     String   @db.VarChar(50) @map("action")
+  UserId     Int?     @map("user_id")
+  Changes    Json?    @map("changes")
+  IpAddress  String?  @db.VarChar(45) @map("ip_address")
+  Timestamp  DateTime @default(now()) @db.DateTime @map("timestamp")
+
+  User       Users?   @relation(fields: [UserId], references: [Id])
+
+  @@index([EntityType, EntityId])
+  @@index([UserId])
+  @@index([Timestamp])
+  @@map("audit_logs")
 }
 

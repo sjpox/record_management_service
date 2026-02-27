@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
@@ -23,7 +24,10 @@ const userSelectFields = {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService,
+  ) {}
 
   async findAll(pagination: PaginationDto): Promise<PaginatedResult<Omit<Users, 'PasswordHash'>>> {
     const { page = 1, limit = 10 } = pagination;
@@ -86,11 +90,18 @@ export class UsersService {
       select: userSelectFields,
     });
 
+    this.auditService.log({
+      entityType: 'User',
+      entityId: user.Id,
+      action: 'CREATE',
+      changes: { after: user },
+    });
+
     return user;
   }
 
   async update(id: number, dto: UpdateUserDto): Promise<Omit<Users, 'PasswordHash'>> {
-    await this.findOne(id);
+    const before = await this.findOne(id);
 
     const updateData: Record<string, unknown> = {};
 
@@ -112,28 +123,51 @@ export class UsersService {
     if (dto.Email !== undefined) updateData.Email = dto.Email;
     if (dto.IsActive !== undefined) updateData.IsActive = dto.IsActive;
 
-    return this.prisma.users.update({
+    const updated = await this.prisma.users.update({
       where: { Id: id },
       data: updateData,
       select: userSelectFields,
     });
+
+    this.auditService.log({
+      entityType: 'User',
+      entityId: id,
+      action: 'UPDATE',
+      changes: { before, after: updated },
+    });
+
+    return updated;
   }
 
   async remove(id: number): Promise<Omit<Users, 'PasswordHash'>> {
-    await this.findOne(id);
-    return this.prisma.users.delete({
-      where: { Id: id },
-      select: userSelectFields,
+    const user = await this.findOne(id);
+    await this.prisma.users.delete({ where: { Id: id } });
+
+    this.auditService.log({
+      entityType: 'User',
+      entityId: id,
+      action: 'DELETE',
+      changes: { before: user },
     });
+
+    return user;
   }
 
   async deactivate(id: number): Promise<Omit<Users, 'PasswordHash'>> {
     await this.findOne(id);
-    return this.prisma.users.update({
+    const updated = await this.prisma.users.update({
       where: { Id: id },
       data: { IsActive: false },
       select: userSelectFields,
     });
+
+    this.auditService.log({
+      entityType: 'User',
+      entityId: id,
+      action: 'DEACTIVATE',
+    });
+
+    return updated;
   }
 
   async updateLastLogin(id: number): Promise<void> {

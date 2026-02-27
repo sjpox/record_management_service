@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 
@@ -27,9 +28,10 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private auditService: AuditService,
   ) {}
 
-  async login(dto: LoginDto): Promise<{
+  async login(dto: LoginDto, ipAddress?: string): Promise<{
     user: UserPayload;
     accessToken: string;
     refreshToken: string;
@@ -67,6 +69,13 @@ export class AuthService {
       expiresIn: this.refreshTokenExpirySeconds,
     });
 
+    this.auditService.log({
+      entityType: 'Auth',
+      action: 'LOGIN',
+      userId: user.Id,
+      ipAddress,
+    });
+
     return {
       user: {
         Id: user.Id,
@@ -84,9 +93,16 @@ export class AuthService {
     };
   }
 
-  async logout(token: string): Promise<{ message: string }> {
-    // Add token to blacklist
+  async logout(token: string, userId?: number, ipAddress?: string): Promise<{ message: string }> {
     this.tokenBlacklist.add(token);
+
+    this.auditService.log({
+      entityType: 'Auth',
+      action: 'LOGOUT',
+      userId,
+      ipAddress,
+    });
+
     return { message: 'Logged out successfully' };
   }
 
