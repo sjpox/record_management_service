@@ -40,9 +40,17 @@ export class FtpService {
     },
   };
 
+  private readonly ftpTimeout = Number(process.env.FTP_TIMEOUT) || 10000;
+
   private readonly baseUploadDir = process.env.FTP_UPLOAD_DIR ?? '/ftp';
   private readonly apiBaseUrl = process.env.API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
   private readonly imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
+
+  private createFtpClient(): Client {
+    const client = new Client(this.ftpTimeout);
+    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    return client;
+  }
 
   private isImage(filename: string): boolean {
     const ext = path.extname(filename).toLowerCase();
@@ -141,8 +149,7 @@ export class FtpService {
     options: VoucherUploadOptions,
   ): Promise<UploadResult> {
     const remotePath = this.buildVoucherPath(category, options);
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
 
     try {
       // Process file (convert to WebP if needed)
@@ -179,8 +186,7 @@ export class FtpService {
     const processedFiles = await Promise.all(files.map((file) => this.processFile(file)));
 
     // Single FTP connection for all uploads
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
     const results: UploadResult[] = [];
 
     try {
@@ -203,6 +209,28 @@ export class FtpService {
         }
       }
 
+      // Verify all successful uploads actually exist on FTP
+      const successfulResults = results.filter((r) => r.success);
+      if (successfulResults.length > 0) {
+        const verifyPaths = successfulResults.map((r) => r.filePath);
+        for (const filePath of verifyPaths) {
+          try {
+            await client.size(filePath);
+          } catch {
+            // File doesn't exist on FTP despite successful upload — mark as failed
+            const idx = results.findIndex((r) => r.filePath === filePath);
+            if (idx !== -1) {
+              console.error(`FTP upload verification failed: ${filePath}`);
+              results[idx] = {
+                success: false,
+                filePath: '',
+                error: 'Upload verification failed — file not found on server',
+              };
+            }
+          }
+        }
+      }
+
       return results;
     } catch (err) {
       console.error('FTP connection error:', err);
@@ -218,8 +246,7 @@ export class FtpService {
   }
 
   async deleteFile(filePath: string): Promise<boolean> {
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
 
     try {
       await client.access(this.ftpConfig);
@@ -236,8 +263,7 @@ export class FtpService {
   async deleteMultipleFiles(filePaths: string[]): Promise<boolean[]> {
     if (filePaths.length === 0) return [];
 
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
     const results: boolean[] = [];
 
     try {
@@ -262,8 +288,7 @@ export class FtpService {
   }
 
   async deleteDirectory(dirPath: string): Promise<boolean> {
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
 
     try {
       await client.access(this.ftpConfig);
@@ -282,8 +307,7 @@ export class FtpService {
   }
 
   async downloadFile(filePath: string): Promise<Buffer> {
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
 
     try {
       await client.access(this.ftpConfig);
@@ -306,8 +330,7 @@ export class FtpService {
   async downloadMultipleFiles(filePaths: string[]): Promise<Map<string, Buffer | null>> {
     if (filePaths.length === 0) return new Map();
 
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
     const results = new Map<string, Buffer | null>();
 
     try {
@@ -406,8 +429,7 @@ export class FtpService {
     filePath: string,
     crop: { left: number; top: number; width: number; height: number },
   ): Promise<{ success: boolean; fileSize: number }> {
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
 
     try {
       await client.access(this.ftpConfig);
@@ -449,8 +471,7 @@ export class FtpService {
   async checkFilesExist(filePaths: string[]): Promise<Map<string, boolean>> {
     if (filePaths.length === 0) return new Map();
 
-    const client = new Client();
-    client.ftp.verbose = process.env.NODE_ENV !== 'production';
+    const client = this.createFtpClient();
     const results = new Map<string, boolean>();
 
     try {
