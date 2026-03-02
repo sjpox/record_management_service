@@ -109,7 +109,7 @@ export class VouchersController {
     @CurrentUser() user: { Id: number },
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files, dto.crops);
+    return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files);
   }
 
   @Post(':id/unarchive')

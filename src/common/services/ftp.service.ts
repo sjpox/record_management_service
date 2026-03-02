@@ -22,11 +22,6 @@ export interface VoucherUploadOptions {
   date?: Date;
 }
 
-interface ProcessedFile {
-  buffer: Buffer;
-  filename: string;
-}
-
 @Injectable()
 export class FtpService {
   private readonly ftpConfig = {
@@ -44,35 +39,11 @@ export class FtpService {
 
   private readonly baseUploadDir = process.env.FTP_UPLOAD_DIR ?? '/ftp';
   private readonly apiBaseUrl = process.env.API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
-  private readonly imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
 
   private createFtpClient(): Client {
     const client = new Client(this.ftpTimeout);
     client.ftp.verbose = process.env.NODE_ENV !== 'production';
     return client;
-  }
-
-  private isImage(filename: string): boolean {
-    const ext = path.extname(filename).toLowerCase();
-    return this.imageExtensions.includes(ext);
-  }
-
-  private async convertToWebp(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer)
-      .webp({
-        quality: 85,
-        smartSubsample: false,
-        effort: 4,
-      })
-      .toBuffer();
-  }
-
-  private async convertToPng(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer)
-      .png({
-        compressionLevel: 6,
-      })
-      .toBuffer();
   }
 
   /**
@@ -94,44 +65,20 @@ export class FtpService {
       .toBuffer();
   }
 
+  private readonly imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
+
+  private isImage(filename: string): boolean {
+    const ext = path.extname(filename).toLowerCase();
+    return this.imageExtensions.includes(ext);
+  }
+
   private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer)
-      .jpeg({ quality: 85 })
-      .toBuffer();
-  }
-
-  private getWebpFilename(filename: string): string {
-    const ext = path.extname(filename);
-    return filename.replace(ext, '.webp');
-  }
-
-  private getPngFilename(filename: string): string {
-    const ext = path.extname(filename);
-    return filename.replace(ext, '.png');
+    return sharp(buffer).jpeg({ quality: 85 }).toBuffer();
   }
 
   private getJpegFilename(filename: string): string {
     const ext = path.extname(filename);
     return filename.replace(ext, '.jpg');
-  }
-
-  /**
-   * Process file: convert to JPEG if image
-   */
-  private async processFile(file: Express.Multer.File): Promise<ProcessedFile> {
-    let buffer = file.buffer;
-    let filename = file.originalname;
-
-    if (this.isImage(filename)) {
-      try {
-        buffer = await this.convertToJpeg(file.buffer);
-        filename = this.getJpegFilename(filename);
-      } catch (err) {
-        console.error('Image conversion error:', err);
-      }
-    }
-
-    return { buffer, filename };
   }
 
   buildVoucherPath(category: string, options: VoucherUploadOptions): string {
@@ -152,15 +99,19 @@ export class FtpService {
     const client = this.createFtpClient();
 
     try {
-      // Process file (convert to WebP if needed)
-      const processed = await this.processFile(file);
-      const fullFilePath = path.posix.join(remotePath, processed.filename);
+      let buffer = file.buffer;
+      let filename = file.originalname;
+      if (this.isImage(filename)) {
+        buffer = await this.convertToJpeg(buffer);
+        filename = this.getJpegFilename(filename);
+      }
+      const fullFilePath = path.posix.join(remotePath, filename);
 
       await client.access(this.ftpConfig);
       await client.ensureDir(remotePath);
-      await client.uploadFrom(Readable.from([processed.buffer]), fullFilePath);
+      await client.uploadFrom(Readable.from([buffer]), fullFilePath);
 
-      return { success: true, filePath: fullFilePath, fileSize: processed.buffer.length };
+      return { success: true, filePath: fullFilePath, fileSize: buffer.length };
     } catch (err) {
       console.error('FTP upload error:', err);
       return {
@@ -182,9 +133,6 @@ export class FtpService {
 
     const remotePath = this.buildVoucherPath(category, options);
 
-    // Process all files in parallel (WebP conversion)
-    const processedFiles = await Promise.all(files.map((file) => this.processFile(file)));
-
     // Single FTP connection for all uploads
     const client = this.createFtpClient();
     const results: UploadResult[] = [];
@@ -194,11 +142,17 @@ export class FtpService {
       await client.ensureDir(remotePath);
 
       // Upload all files using the same connection
-      for (const processed of processedFiles) {
-        const fullFilePath = path.posix.join(remotePath, processed.filename);
+      for (const file of files) {
+        let buffer = file.buffer;
+        let filename = file.originalname;
+        if (this.isImage(filename)) {
+          buffer = await this.convertToJpeg(buffer);
+          filename = this.getJpegFilename(filename);
+        }
+        const fullFilePath = path.posix.join(remotePath, filename);
         try {
-          await client.uploadFrom(Readable.from([processed.buffer]), fullFilePath);
-          results.push({ success: true, filePath: fullFilePath, fileSize: processed.buffer.length });
+          await client.uploadFrom(Readable.from([buffer]), fullFilePath);
+          results.push({ success: true, filePath: fullFilePath, fileSize: buffer.length });
         } catch (err) {
           console.error('FTP upload error:', err);
           results.push({

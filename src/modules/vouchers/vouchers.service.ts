@@ -231,9 +231,8 @@ export class VouchersService {
       VoucherImages.map(async (photo) => {
         const buffer = downloadedFiles.get(photo.ImageFile);
         if (buffer) {
-          const enhanced = await this.ftpService.enhanceImage(buffer);
           const mimeType = this.ftpService.getMimeType(photo.ImageFile);
-          const base64 = `data:${mimeType};base64,${enhanced.toString('base64')}`;
+          const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
           return {
             id: photo.Id,
             imageFile: photo.ImageFile,
@@ -411,8 +410,7 @@ export class VouchersService {
     userId: number,
     deletePhotoIds?: number[],
     files?: Express.Multer.File[],
-    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
-  ): Promise<{ added: number; deleted: number; cropped: number }> {
+  ): Promise<{ added: number; deleted: number }> {
     const voucher = await this.findOne(id);
 
     if (!voucher.IsArchived) {
@@ -425,7 +423,6 @@ export class VouchersService {
 
     let added = 0;
     let deleted = 0;
-    let cropped = 0;
     const uploadedFiles: string[] = [];
     const filesToDeleteFromFtp: string[] = [];
 
@@ -486,39 +483,8 @@ export class VouchersService {
           }
         }
 
-        // 3. Handle crops (replace originals with cropped versions)
-        if (crops && crops.length > 0) {
-          const cropImageIds = crops.map((c) => c.imageId);
-          const imagesToCrop = await tx.voucherImages.findMany({
-            where: {
-              Id: { in: cropImageIds },
-              VoucherId: id,
-            },
-          });
-
-          for (const image of imagesToCrop) {
-            const crop = crops.find((c) => c.imageId === image.Id);
-            if (!crop) continue;
-
-            const result = await this.ftpService.cropAndReupload(image.ImageFile, {
-              left: crop.left,
-              top: crop.top,
-              width: crop.width,
-              height: crop.height,
-            });
-
-            if (result.success) {
-              await tx.voucherImages.update({
-                where: { Id: image.Id },
-                data: { ImageFileSize: result.fileSize },
-              });
-              cropped++;
-            }
-          }
-        }
-
-        // 4. Update last modified by
-        if (added > 0 || deleted > 0 || cropped > 0) {
+        // 3. Update last modified by
+        if (added > 0 || deleted > 0) {
           await tx.vouchers.update({
             where: { Id: id },
             data: { LastModifiedById: userId },
@@ -531,17 +497,17 @@ export class VouchersService {
         await this.ftpService.deleteMultipleFiles(filesToDeleteFromFtp);
       }
 
-      if (added > 0 || deleted > 0 || cropped > 0) {
+      if (added > 0 || deleted > 0) {
         this.auditService.log({
           entityType: 'Voucher',
           entityId: id,
           action: 'UPDATE_PHOTOS',
           userId,
-          changes: { after: { added, deleted, cropped } },
+          changes: { after: { added, deleted } },
         });
       }
 
-      return { added, deleted, cropped };
+      return { added, deleted };
     } catch (error) {
       // Rollback: Clean up newly uploaded files if transaction failed
       if (uploadedFiles.length > 0) {
