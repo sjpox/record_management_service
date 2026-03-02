@@ -4,6 +4,21 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.5.1
+
+**Improvements**
+- Wrapped all voucher service write operations (`create`, `update`, `updatePhotos`) in Prisma transactions for data consistency
+- Added error audit logging for all voucher operations — failures are now recorded in audit logs with `*_ERROR` action types (e.g. `CREATE_ERROR`, `ARCHIVE_ERROR`)
+- Added FTP upload verification — after uploading, each file is checked with `client.size()` to confirm it actually persisted on the server
+- Added FTP client timeout (10s default, configurable via `FTP_TIMEOUT`) to prevent indefinite hangs on unresponsive FTP connections
+- Increased max photo upload limit from 10 to 20 per request on all endpoints (`create`, `archive`, `updatePhotos`)
+- Added file count limit (20) to `updatePhotos` endpoint which previously had no limit
+- Added image validation before upload — corrupt or empty images are rejected early with `sharp` metadata check before any FTP or DB operations
+- Centralized FTP client creation via `createFtpClient()` helper for consistent timeout and verbose settings
+
+**New Environment Variables**
+- `FTP_TIMEOUT` — FTP socket timeout in milliseconds (default: `10000`)
+
 ### v1.5.0
 
 **New Features**
