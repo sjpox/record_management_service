@@ -6,6 +6,7 @@ import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
 import { Vouchers } from '@prisma/client';
+import sharp from 'sharp';
 
 // Select fields excluding photos
 const voucherSelectFields = {
@@ -51,6 +52,36 @@ export class VouchersService {
     private ftpService: FtpService,
     private auditService: AuditService,
   ) {}
+
+  /**
+   * Validate that all uploaded files are valid, non-corrupt images.
+   * Throws BadRequestException if any file is malformed.
+   */
+  private async validateImageFiles(files: Express.Multer.File[]): Promise<void> {
+    const errors: string[] = [];
+
+    for (const file of files) {
+      if (!file.buffer || file.buffer.length === 0) {
+        errors.push(`${file.originalname}: file is empty`);
+        continue;
+      }
+
+      try {
+        const metadata = await sharp(file.buffer).metadata();
+        if (!metadata.width || !metadata.height || metadata.width === 0 || metadata.height === 0) {
+          errors.push(`${file.originalname}: image has invalid dimensions`);
+        }
+      } catch {
+        errors.push(`${file.originalname}: image is corrupted or unreadable`);
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException(
+        `${errors.length} image${errors.length !== 1 ? 's are' : ' is'} corrupted or invalid: ${errors.join('; ')}`,
+      );
+    }
+  }
 
   async getStats(): Promise<{
     totalCount: number;
@@ -246,49 +277,64 @@ export class VouchersService {
   }
 
   async create(dto: CreateVoucherDto, userId: number, files?: Express.Multer.File[]): Promise<Vouchers> {
-    // 1. Create voucher first
-    const voucher = await this.prisma.vouchers.create({
-      data: {
-        VoucherNo: dto.VoucherNo,
-        TransactionNo: dto.TransactionNo,
-        Payee: dto.Payee,
-        Particulars: dto.Particulars,
-        ClaimType: dto.ClaimType,
-        Amount: dto.Amount,
-        DateDisbursed: new Date(dto.DateDisbursed),
-        IsArchived: dto.IsArchived ?? false,
-        AddedById: userId,
-        LastModifiedById: userId,
-      },
-    });
+    if (files && files.length > 0) {
+      await this.validateImageFiles(files);
+    }
 
     const uploadedFiles: string[] = [];
 
     try {
-      // 2. Upload files (outside transaction to avoid timeout)
-      if (files && files.length > 0) {
-        const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
-          voucherNo: voucher.VoucherNo,
-          date: voucher.DateDisbursed,
+      const voucher = await this.prisma.$transaction(async (tx) => {
+        // 1. Create voucher
+        const created = await tx.vouchers.create({
+          data: {
+            VoucherNo: dto.VoucherNo,
+            TransactionNo: dto.TransactionNo,
+            Payee: dto.Payee,
+            Particulars: dto.Particulars,
+            ClaimType: dto.ClaimType,
+            Amount: dto.Amount,
+            DateDisbursed: new Date(dto.DateDisbursed),
+            IsArchived: dto.IsArchived ?? false,
+            AddedById: userId,
+            LastModifiedById: userId,
+          },
         });
 
-        const successfulUploads = uploadResults.filter((r) => r.success);
-
-        uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
-
-        // 3. Insert photo records
-        if (successfulUploads.length > 0) {
-          await this.prisma.voucherImages.createMany({
-            data: successfulUploads.map((r) => ({
-              ImageFile: r.filePath,
-              ImageFileType: 'jpeg',
-              ImageFileSize: r.fileSize ?? null,
-              VoucherId: voucher.Id,
-              EvidencedById: userId,
-            })),
+        // 2. Upload files
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
+            voucherNo: created.VoucherNo,
+            date: created.DateDisbursed,
           });
+
+          const successfulUploads = uploadResults.filter((r) => r.success);
+          const failedUploads = uploadResults.filter((r) => !r.success);
+
+          uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
+
+          if (failedUploads.length > 0) {
+            throw new BadRequestException(
+              `Failed to upload ${failedUploads.length} of ${files.length} image(s). Please try again.`,
+            );
+          }
+
+          // 3. Insert photo records
+          if (successfulUploads.length > 0) {
+            await tx.voucherImages.createMany({
+              data: successfulUploads.map((r) => ({
+                ImageFile: r.filePath,
+                ImageFileType: 'jpeg',
+                ImageFileSize: r.fileSize ?? null,
+                VoucherId: created.Id,
+                EvidencedById: userId,
+              })),
+            });
+          }
         }
-      }
+
+        return created;
+      }, { timeout: 30000 });
 
       const result = await this.findOne(voucher.Id);
 
@@ -301,38 +347,63 @@ export class VouchersService {
 
       return result;
     } catch (error) {
-      // Rollback: Clean up uploaded files and delete voucher if photo upload failed
+      // Rollback: Clean up uploaded files if transaction failed
       if (uploadedFiles.length > 0) {
         await this.ftpService.deleteMultipleFiles(uploadedFiles);
       }
-      // Delete the created voucher on error
-      await this.prisma.vouchers.delete({ where: { Id: voucher.Id } });
+      this.auditService.log({
+        entityType: 'Voucher',
+        action: 'CREATE_ERROR',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
       throw error;
     }
   }
 
   async update(id: number, dto: UpdateVoucherDto, userId: number): Promise<Vouchers> {
-    const before = await this.findOne(id);
-    const { DateDisbursed, ...rest } = dto;
-    const updated = await this.prisma.vouchers.update({
-      where: { Id: id },
-      data: {
-        ...rest,
-        DateDisbursed: DateDisbursed ? new Date(DateDisbursed) : undefined,
-        LastModifiedById: userId,
-      },
-      select: voucherSelectFields,
-    });
+    try {
+      const { DateDisbursed, ...rest } = dto;
 
-    this.auditService.log({
-      entityType: 'Voucher',
-      entityId: id,
-      action: 'UPDATE',
-      userId,
-      changes: { before, after: updated },
-    });
+      const { before, updated } = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.vouchers.findUnique({
+          where: { Id: id },
+          select: voucherSelectFields,
+        });
+        if (!existing) throw new NotFoundException(`Voucher with ID ${id} not found`);
 
-    return updated as unknown as Vouchers;
+        const result = await tx.vouchers.update({
+          where: { Id: id },
+          data: {
+            ...rest,
+            DateDisbursed: DateDisbursed ? new Date(DateDisbursed) : undefined,
+            LastModifiedById: userId,
+          },
+          select: voucherSelectFields,
+        });
+
+        return { before: existing, updated: result };
+      });
+
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'UPDATE',
+        userId,
+        changes: { before, after: updated },
+      });
+
+      return updated as unknown as Vouchers;
+    } catch (error) {
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'UPDATE_ERROR',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
   }
 
   async updatePhotos(
@@ -348,6 +419,10 @@ export class VouchersService {
       throw new BadRequestException('Can only manage photos for archived vouchers');
     }
 
+    if (files && files.length > 0) {
+      await this.validateImageFiles(files);
+    }
+
     let added = 0;
     let deleted = 0;
     let cropped = 0;
@@ -355,94 +430,103 @@ export class VouchersService {
     const filesToDeleteFromFtp: string[] = [];
 
     try {
-      // 1. Handle deletions first
-      if (deletePhotoIds && deletePhotoIds.length > 0) {
-        const photosToDelete = await this.prisma.voucherImages.findMany({
-          where: {
-            Id: { in: deletePhotoIds },
-            VoucherId: id,
-          },
-        });
-
-        if (photosToDelete.length > 0) {
-          filesToDeleteFromFtp.push(...photosToDelete.map((p) => p.ImageFile));
-
-          await this.prisma.voucherImages.deleteMany({
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Handle deletions first
+        if (deletePhotoIds && deletePhotoIds.length > 0) {
+          const photosToDelete = await tx.voucherImages.findMany({
             where: {
-              Id: { in: photosToDelete.map((p) => p.Id) },
+              Id: { in: deletePhotoIds },
+              VoucherId: id,
             },
           });
 
-          deleted = photosToDelete.length;
-        }
-      }
+          if (photosToDelete.length > 0) {
+            filesToDeleteFromFtp.push(...photosToDelete.map((p) => p.ImageFile));
 
-      // 2. Handle additions
-      if (files && files.length > 0) {
-        const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
-          voucherNo: voucher.VoucherNo,
-          date: voucher.DateDisbursed,
-        });
-
-        const successfulUploads = uploadResults.filter((r) => r.success);
-
-        uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
-
-        if (successfulUploads.length > 0) {
-          await this.prisma.voucherImages.createMany({
-            data: successfulUploads.map((r) => ({
-              ImageFile: r.filePath,
-              ImageFileType: 'jpeg',
-              ImageFileSize: r.fileSize ?? null,
-              VoucherId: id,
-              EvidencedById: userId,
-            })),
-          });
-
-          added = successfulUploads.length;
-        }
-      }
-
-      // 3. Handle crops (replace originals with cropped versions)
-      if (crops && crops.length > 0) {
-        const cropImageIds = crops.map((c) => c.imageId);
-        const imagesToCrop = await this.prisma.voucherImages.findMany({
-          where: {
-            Id: { in: cropImageIds },
-            VoucherId: id,
-          },
-        });
-
-        for (const image of imagesToCrop) {
-          const crop = crops.find((c) => c.imageId === image.Id);
-          if (!crop) continue;
-
-          const result = await this.ftpService.cropAndReupload(image.ImageFile, {
-            left: crop.left,
-            top: crop.top,
-            width: crop.width,
-            height: crop.height,
-          });
-
-          if (result.success) {
-            await this.prisma.voucherImages.update({
-              where: { Id: image.Id },
-              data: { ImageFileSize: result.fileSize },
+            await tx.voucherImages.deleteMany({
+              where: {
+                Id: { in: photosToDelete.map((p) => p.Id) },
+              },
             });
-            cropped++;
+
+            deleted = photosToDelete.length;
           }
         }
-      }
 
-      // 4. Update last modified by
-      if (added > 0 || deleted > 0 || cropped > 0) {
-        await this.prisma.vouchers.update({
-          where: { Id: id },
-          data: { LastModifiedById: userId },
-        });
-      }
+        // 2. Handle additions
+        if (files && files.length > 0) {
+          const uploadResults = await this.ftpService.uploadMultipleVoucherFiles(files, 'vouchers', {
+            voucherNo: voucher.VoucherNo,
+            date: voucher.DateDisbursed,
+          });
 
-      // 5. Delete files from FTP after successful DB operations
+          const successfulUploads = uploadResults.filter((r) => r.success);
+          const failedUploads = uploadResults.filter((r) => !r.success);
+
+          uploadedFiles.push(...successfulUploads.map((r) => r.filePath));
+
+          if (failedUploads.length > 0) {
+            throw new BadRequestException(
+              `Failed to upload ${failedUploads.length} of ${files.length} image(s). Please try again.`,
+            );
+          }
+
+          if (successfulUploads.length > 0) {
+            await tx.voucherImages.createMany({
+              data: successfulUploads.map((r) => ({
+                ImageFile: r.filePath,
+                ImageFileType: 'jpeg',
+                ImageFileSize: r.fileSize ?? null,
+                VoucherId: id,
+                EvidencedById: userId,
+              })),
+            });
+
+            added = successfulUploads.length;
+          }
+        }
+
+        // 3. Handle crops (replace originals with cropped versions)
+        if (crops && crops.length > 0) {
+          const cropImageIds = crops.map((c) => c.imageId);
+          const imagesToCrop = await tx.voucherImages.findMany({
+            where: {
+              Id: { in: cropImageIds },
+              VoucherId: id,
+            },
+          });
+
+          for (const image of imagesToCrop) {
+            const crop = crops.find((c) => c.imageId === image.Id);
+            if (!crop) continue;
+
+            const result = await this.ftpService.cropAndReupload(image.ImageFile, {
+              left: crop.left,
+              top: crop.top,
+              width: crop.width,
+              height: crop.height,
+            });
+
+            if (result.success) {
+              await tx.voucherImages.update({
+                where: { Id: image.Id },
+                data: { ImageFileSize: result.fileSize },
+              });
+              cropped++;
+            }
+          }
+        }
+
+        // 4. Update last modified by
+        if (added > 0 || deleted > 0 || cropped > 0) {
+          await tx.vouchers.update({
+            where: { Id: id },
+            data: { LastModifiedById: userId },
+          });
+        }
+      }, { timeout: 30000 });
+
+      // Delete files from FTP after successful transaction
       if (filesToDeleteFromFtp.length > 0) {
         await this.ftpService.deleteMultipleFiles(filesToDeleteFromFtp);
       }
@@ -459,10 +543,17 @@ export class VouchersService {
 
       return { added, deleted, cropped };
     } catch (error) {
-      // Rollback: Clean up newly uploaded files if operation failed
+      // Rollback: Clean up newly uploaded files if transaction failed
       if (uploadedFiles.length > 0) {
         await this.ftpService.deleteMultipleFiles(uploadedFiles);
       }
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'UPDATE_PHOTOS_ERROR',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
       throw error;
     }
   }
@@ -487,39 +578,50 @@ export class VouchersService {
   }
 
   async unarchive(id: number, userId: number): Promise<Vouchers> {
-    await this.findOne(id);
+    try {
+      await this.findOne(id);
 
-    // Get photos to determine the FTP folder path
-    const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
-    const folderPaths = new Set(
-      photos.map((p) => p.ImageFile.substring(0, p.ImageFile.lastIndexOf('/'))),
-    );
+      // Get photos to determine the FTP folder path
+      const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
+      const folderPaths = new Set(
+        photos.map((p) => p.ImageFile.substring(0, p.ImageFile.lastIndexOf('/'))),
+      );
 
-    // Delete photos and set IsArchived to false in transaction
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.voucherImages.deleteMany({ where: { VoucherId: id } });
-      return tx.vouchers.update({
-        where: { Id: id },
-        data: { IsArchived: false, DateArchived: null, LastModifiedById: userId },
-        select: voucherSelectFields,
+      // Delete photos and set IsArchived to false in transaction
+      const updated = await this.prisma.$transaction(async (tx) => {
+        await tx.voucherImages.deleteMany({ where: { VoucherId: id } });
+        return tx.vouchers.update({
+          where: { Id: id },
+          data: { IsArchived: false, DateArchived: null, LastModifiedById: userId },
+          select: voucherSelectFields,
+        });
       });
-    });
 
-    // Clean up folders from FTP after successful DB operations
-    for (const folder of folderPaths) {
-      if (folder) {
-        await this.ftpService.deleteDirectory(folder);
+      // Clean up folders from FTP after successful DB operations
+      for (const folder of folderPaths) {
+        if (folder) {
+          await this.ftpService.deleteDirectory(folder);
+        }
       }
+
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'UNARCHIVE',
+        userId,
+      });
+
+      return updated as unknown as Vouchers;
+    } catch (error) {
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'UNARCHIVE_ERROR',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
     }
-
-    this.auditService.log({
-      entityType: 'Voucher',
-      entityId: id,
-      action: 'UNARCHIVE',
-      userId,
-    });
-
-    return updated as unknown as Vouchers;
   }
 
   async bulkCreate(vouchers: CreateVoucherDto[], userId: number): Promise<{
@@ -583,31 +685,41 @@ export class VouchersService {
 
     // Process valid vouchers in transaction
     if (vouchersToCreate.length > 0) {
-      await this.prisma.$transaction(async (tx) => {
-        for (const dto of vouchersToCreate) {
-          try {
-            await tx.vouchers.create({
-              data: {
-                VoucherNo: dto.VoucherNo,
-                TransactionNo: dto.TransactionNo,
-                Payee: dto.Payee,
-                Particulars: dto.Particulars,
-                ClaimType: dto.ClaimType,
-                Amount: dto.Amount,
-                DateDisbursed: new Date(dto.DateDisbursed),
-                IsArchived: dto.IsArchived ?? false,
-                AddedById: userId,
-                LastModifiedById: userId,
-              },
-            });
-            created++;
-          } catch (error) {
-            failed++;
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            errors.push(`Voucher ${dto.VoucherNo}: ${message}`);
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          for (const dto of vouchersToCreate) {
+            try {
+              await tx.vouchers.create({
+                data: {
+                  VoucherNo: dto.VoucherNo,
+                  TransactionNo: dto.TransactionNo,
+                  Payee: dto.Payee,
+                  Particulars: dto.Particulars,
+                  ClaimType: dto.ClaimType,
+                  Amount: dto.Amount,
+                  DateDisbursed: new Date(dto.DateDisbursed),
+                  IsArchived: dto.IsArchived ?? false,
+                  AddedById: userId,
+                  LastModifiedById: userId,
+                },
+              });
+              created++;
+            } catch (error) {
+              failed++;
+              const message = error instanceof Error ? error.message : 'Unknown error';
+              errors.push(`Voucher ${dto.VoucherNo}: ${message}`);
+            }
           }
-        }
-      });
+        });
+      } catch (error) {
+        this.auditService.log({
+          entityType: 'Voucher',
+          action: 'BULK_CREATE_ERROR',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        throw error;
+      }
     }
 
     return { created, skipped, failed, duplicates, errors };
@@ -682,6 +794,10 @@ export class VouchersService {
       throw new BadRequestException('Voucher is already archived');
     }
 
+    if (files && files.length > 0) {
+      await this.validateImageFiles(files);
+    }
+
     const uploadedFiles: { filePath: string; fileSize: number }[] = [];
 
     try {
@@ -706,14 +822,22 @@ export class VouchersService {
           });
 
           const successfulUploads = uploadResults.filter((r) => r.success);
+          const failedUploads = uploadResults.filter((r) => !r.success);
           uploadedFiles.push(...successfulUploads.map((r) => ({ filePath: r.filePath, fileSize: r.fileSize ?? 0 })));
+
+          // Rollback if any uploads failed
+          if (failedUploads.length > 0) {
+            throw new BadRequestException(
+              `Failed to upload ${failedUploads.length} of ${files.length} image(s). Please try again.`,
+            );
+          }
 
           if (successfulUploads.length > 0) {
             await tx.voucherImages.createMany({
-              data: uploadedFiles.map((f) => ({
-                ImageFile: f.filePath,
+              data: successfulUploads.map((r) => ({
+                ImageFile: r.filePath,
                 ImageFileType: 'jpeg',
-                ImageFileSize: f.fileSize,
+                ImageFileSize: r.fileSize ?? 0,
                 VoucherId: id,
                 EvidencedById: userId,
               })),
@@ -737,6 +861,13 @@ export class VouchersService {
       if (uploadedFiles.length > 0) {
         await this.ftpService.deleteMultipleFiles(uploadedFiles.map((f) => f.filePath));
       }
+      this.auditService.log({
+        entityType: 'Voucher',
+        entityId: id,
+        action: 'ARCHIVE_ERROR',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
       throw error;
     }
   }

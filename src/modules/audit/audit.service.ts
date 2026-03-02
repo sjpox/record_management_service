@@ -8,6 +8,7 @@ export interface AuditLogParams {
   userId?: number;
   changes?: { before?: any; after?: any };
   ipAddress?: string;
+  error?: string;
 }
 
 @Injectable()
@@ -24,7 +25,9 @@ export class AuditService {
           EntityId: params.entityId ?? null,
           Action: params.action,
           UserId: params.userId ?? null,
-          Changes: params.changes ?? undefined,
+          Changes: params.error
+            ? { ...params.changes, error: params.error }
+            : params.changes ?? undefined,
           IpAddress: params.ipAddress ?? null,
         },
       });
