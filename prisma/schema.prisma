@@ -82,7 +82,7 @@ model AuditLog {
   EntityId   Int?     @map("entity_id")
   Action     String   @db.VarChar(50) @map("action")
   UserId     Int?     @map("user_id")
-  Changes    Json?    @map("changes")
+  Changes    String?  @db.LongText @map("changes")
   IpAddress  String?  @db.VarChar(45) @map("ip_address")
   Timestamp  DateTime @default(now()) @db.DateTime @map("timestamp")
 

@@ -48,8 +48,13 @@ export class AuditController {
       this.prisma.auditLog.count({ where }),
     ]);
 
+    const parsed = data.map((log) => ({
+      ...log,
+      Changes: log.Changes ? JSON.parse(log.Changes) : null,
+    }));
+
     return {
-      data,
+      data: parsed,
       total,
       page,
       limit,

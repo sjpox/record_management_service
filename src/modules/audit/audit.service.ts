@@ -26,8 +26,8 @@ export class AuditService {
           Action: params.action,
           UserId: params.userId ?? null,
           Changes: params.error
-            ? { ...params.changes, error: params.error }
-            : params.changes ?? undefined,
+            ? JSON.stringify({ ...params.changes, error: params.error })
+            : params.changes ? JSON.stringify(params.changes) : undefined,
           IpAddress: params.ipAddress ?? null,
         },
       });
