@@ -189,7 +189,7 @@ export class FtpService {
     } catch (err) {
       console.error('FTP connection error:', err);
       // Return failure for all files if connection failed
-      return processedFiles.map(() => ({
+      return files.map(() => ({
         success: false,
         filePath: '',
         error: err instanceof Error ? err.message : 'Connection error',
