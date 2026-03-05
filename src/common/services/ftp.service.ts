@@ -73,7 +73,7 @@ export class FtpService {
   }
 
   private async convertToJpeg(buffer: Buffer): Promise<Buffer> {
-    return sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+    return sharp(buffer).jpeg({ quality: 100 }).toBuffer();
   }
 
   private getJpegFilename(filename: string): string {
@@ -407,7 +407,7 @@ export class FtpService {
           width: Math.round(crop.width),
           height: Math.round(crop.height),
         })
-        .jpeg({ quality: 85 })
+        .jpeg({ quality: 100 })
         .toBuffer();
 
       // Overwrite the original file
