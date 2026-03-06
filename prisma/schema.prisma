@@ -25,6 +25,7 @@ model Users {
   VouchersAdded        Vouchers[] @relation("VoucherAddedBy")
   VouchersModified     Vouchers[] @relation("VoucherModifiedBy")
   VoucherImagesAdded   VoucherImages[] @relation("VoucherImageAddedBy")
+  DocumentImagesAdded  DocumentImages[] @relation("DocumentImageAddedBy")
   AuditLogs            AuditLog[]
 
   // Relations for Index Documents
@@ -59,6 +60,7 @@ model Vouchers {
   AddedBy         Users?      @relation("VoucherAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("VoucherModifiedBy", fields: [LastModifiedById], references: [Id])
   VoucherImages       VoucherImages[]
+  DocumentImages      DocumentImages[]
 
   @@index([AddedById])
   @@index([LastModifiedById])
@@ -117,12 +119,34 @@ model IndexDocument {
   // Relations
   AddedBy         Users?      @relation("IndexDocumentAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("IndexDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  DocumentImages  DocumentImages[]
 
   @@index([Payee])
   @@index([period_start, period_end])
   @@index([AddedById])
   @@index([LastModifiedById])
   @@map("index_document")
+}
+
+// Document Images (shared table for vouchers, index documents, and future document types)
+model DocumentImages {
+  Id              Int      @id @default(autoincrement()) @map("document_image_id")
+  ImageFile       String   @db.VarChar(500) @map("image_file")
+  ImageFileType   String?  @db.VarChar(50) @map("image_file_type")
+  ImageFileSize   Int?     @map("image_file_size")
+  VoucherId       Int?     @map("voucher_id")
+  IndexDocumentId Int?     @map("index_document_id")
+  EvidencedById   Int?     @map("evidenced_by")
+
+  // Relations
+  Voucher         Vouchers?      @relation(fields: [VoucherId], references: [Id], onDelete: Cascade)
+  IndexDocument   IndexDocument? @relation(fields: [IndexDocumentId], references: [Id], onDelete: Cascade)
+  EvidencedBy     Users?         @relation("DocumentImageAddedBy", fields: [EvidencedById], references: [Id])
+
+  @@index([VoucherId])
+  @@index([IndexDocumentId])
+  @@index([EvidencedById])
+  @@map("document_images")
 }
 
 // General Document
