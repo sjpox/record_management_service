@@ -423,6 +423,64 @@ export class IndexDocumentService {
     }));
   }
 
+  async composeDocument(
+    id: number,
+    isBlackAndWhite = false,
+    isScanEffect = false,
+    imageIds: number[] = [],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+  ): Promise<{
+    fileType: string;
+    fileSize: number;
+    base64: string;
+  }> {
+    const document = await this.prisma.indexDocument.findUnique({
+      where: { Id: id },
+      include: { DocumentImages: true },
+    });
+
+    if (!document) throw new NotFoundException(`Index document with ID ${id} not found`);
+
+    const selectedImages = imageIds.length > 0
+      ? document.DocumentImages.filter((img) => imageIds.includes(img.Id))
+      : document.DocumentImages;
+
+    if (selectedImages.length === 0) {
+      throw new BadRequestException('No images found for the selected IDs');
+    }
+
+    const filePaths = selectedImages.map((img) => img.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    if (crops) {
+      for (const crop of crops) {
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+      }
+    }
+
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    for (const img of selectedImages) {
+      const buffer = downloadedFiles.get(img.ImageFile);
+      if (buffer) {
+        imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+      }
+    }
+
+    if (imageEntries.length === 0) {
+      throw new BadRequestException('Failed to download images for PDF composition');
+    }
+
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect);
+    const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
+
+    return {
+      fileType: 'pdf',
+      fileSize: pdfBuffer.length,
+      base64,
+    };
+  }
+
   async remove(id: number, userId: number) {
     try {
       const { document, folderPaths } = await this.prisma.$transaction(async (tx) => {

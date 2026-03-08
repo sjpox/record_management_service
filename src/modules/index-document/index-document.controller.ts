@@ -19,6 +19,7 @@ import { CreateIndexDocumentDto } from './dto/create-index-document.dto';
 import { UpdateIndexDocumentDto } from './dto/update-index-document.dto';
 import { IndexDocumentQueryDto } from './dto/index-document-query.dto';
 import { UpdateIndexDocumentPhotosDto } from './dto/update-photos.dto';
+import { ComposePdfDto } from '../vouchers/dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -86,6 +87,19 @@ export class IndexDocumentController {
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
     return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files);
+  }
+
+  @Post(':id/compose-pdf')
+  @ApiOperation({ summary: 'Compose index document images into a PDF for printing' })
+  composePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('color') color?: string,
+    @Query('scanEffect') scanEffect?: string,
+    @Body() dto?: ComposePdfDto,
+  ) {
+    const isBlackAndWhite = color === 'bw';
+    const isScanEffect = scanEffect === 'true';
+    return this.service.composeDocument(id, isBlackAndWhite, isScanEffect, dto?.imageIds ?? [], dto?.crops);
   }
 
   @Delete(':id')
