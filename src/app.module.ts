@@ -8,6 +8,9 @@ import { FilesModule } from './modules/files/files.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { IndexDocumentModule } from './modules/index-document/index-document.module';
+import { OtherDocumentModule } from './modules/other-document/other-document.module';
+import { ShelfMapModule } from './modules/shelf-map/shelf-map.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
@@ -21,6 +24,9 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     UsersModule,
     FilesModule,
     ReportsModule,
+    IndexDocumentModule,
+    OtherDocumentModule,
+    ShelfMapModule,
   ],
 })
 export class AppModule implements NestModule {

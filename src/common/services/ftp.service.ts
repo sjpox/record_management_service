@@ -22,6 +22,12 @@ export interface VoucherUploadOptions {
   date?: Date;
 }
 
+export interface IndexDocumentUploadOptions {
+  payee: string;
+  periodStart: Date;
+  periodEnd: Date;
+}
+
 @Injectable()
 export class FtpService {
   private readonly ftpConfig = {
@@ -79,6 +85,104 @@ export class FtpService {
   private getJpegFilename(filename: string): string {
     const ext = path.extname(filename);
     return filename.replace(ext, '.jpg');
+  }
+
+  buildIndexDocumentPath(options: IndexDocumentUploadOptions): string {
+    const payee = options.payee.replace(/[^a-zA-Z0-9-_ ]/g, '_').trim();
+    const startMonth = (options.periodStart.getMonth() + 1).toString().padStart(2, '0');
+    const startYear = options.periodStart.getFullYear().toString();
+    const endMonth = (options.periodEnd.getMonth() + 1).toString().padStart(2, '0');
+    const endYear = options.periodEnd.getFullYear().toString();
+    const period = `${startYear}-${startMonth}_to_${endYear}-${endMonth}`;
+
+    return path.posix.join(this.baseUploadDir, 'index-documents', payee, period);
+  }
+
+  buildOtherDocumentPath(title: string): string {
+    const sanitizedTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '_').trim();
+    return path.posix.join(this.baseUploadDir, 'other-documents', sanitizedTitle);
+  }
+
+  async uploadOtherDocumentFiles(
+    files: Express.Multer.File[],
+    title: string,
+  ): Promise<UploadResult[]> {
+    if (files.length === 0) return [];
+
+    const remotePath = this.buildOtherDocumentPath(title);
+    return this.uploadFilesToPath(files, remotePath);
+  }
+
+  async uploadIndexDocumentFiles(
+    files: Express.Multer.File[],
+    options: IndexDocumentUploadOptions,
+  ): Promise<UploadResult[]> {
+    if (files.length === 0) return [];
+
+    const remotePath = this.buildIndexDocumentPath(options);
+    return this.uploadFilesToPath(files, remotePath);
+  }
+
+  private async uploadFilesToPath(
+    files: Express.Multer.File[],
+    remotePath: string,
+  ): Promise<UploadResult[]> {
+    const client = this.createFtpClient();
+    const results: UploadResult[] = [];
+
+    try {
+      await client.access(this.ftpConfig);
+      await client.ensureDir(remotePath);
+
+      for (const file of files) {
+        let buffer = file.buffer;
+        let filename = file.originalname;
+        if (this.isImage(filename)) {
+          buffer = await this.convertToJpeg(buffer);
+          filename = this.getJpegFilename(filename);
+        }
+        const fullFilePath = path.posix.join(remotePath, filename);
+        try {
+          await client.uploadFrom(Readable.from([buffer]), fullFilePath);
+          results.push({ success: true, filePath: fullFilePath, fileSize: buffer.length });
+        } catch (err) {
+          console.error('FTP upload error:', err);
+          results.push({
+            success: false,
+            filePath: '',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }
+
+      // Verify uploads
+      const successfulResults = results.filter((r) => r.success);
+      for (const result of successfulResults) {
+        try {
+          await client.size(result.filePath);
+        } catch {
+          const idx = results.findIndex((r) => r.filePath === result.filePath);
+          if (idx !== -1) {
+            results[idx] = {
+              success: false,
+              filePath: '',
+              error: 'Upload verification failed — file not found on server',
+            };
+          }
+        }
+      }
+
+      return results;
+    } catch (err) {
+      console.error('FTP connection error:', err);
+      return files.map(() => ({
+        success: false,
+        filePath: '',
+        error: err instanceof Error ? err.message : 'Connection error',
+      }));
+    } finally {
+      client.close();
+    }
   }
 
   buildVoucherPath(category: string, options: VoucherUploadOptions): string {

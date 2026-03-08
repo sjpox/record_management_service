@@ -25,7 +25,16 @@ model Users {
   VouchersAdded        Vouchers[] @relation("VoucherAddedBy")
   VouchersModified     Vouchers[] @relation("VoucherModifiedBy")
   VoucherImagesAdded   VoucherImages[] @relation("VoucherImageAddedBy")
+  DocumentImagesAdded  DocumentImages[] @relation("DocumentImageAddedBy")
   AuditLogs            AuditLog[]
+
+  // Relations for Index Documents
+  IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
+  IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
+
+  // Relations for Other Documents
+  OtherDocumentsAdded    OtherDocument[] @relation("OtherDocumentAddedBy")
+  OtherDocumentsModified OtherDocument[] @relation("OtherDocumentModifiedBy")
 
   @@map("users")
 }
@@ -51,6 +60,7 @@ model Vouchers {
   AddedBy         Users?      @relation("VoucherAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("VoucherModifiedBy", fields: [LastModifiedById], references: [Id])
   VoucherImages       VoucherImages[]
+  DocumentImages      DocumentImages[]
 
   @@index([AddedById])
   @@index([LastModifiedById])
@@ -92,5 +102,130 @@ model AuditLog {
   @@index([UserId])
   @@index([Timestamp])
   @@map("audit_logs")
+}
+
+// Index Document
+model IndexDocument {
+  Id         Int      @id @default(autoincrement()) @map("index_document_id")
+  Payee     String   @db.VarChar(255) @map("payee")
+  Particulars    String  @db.LongText @map("particulars")
+  period_start  DateTime  @db.DateTime @map("period_start")
+  period_end  DateTime  @db.DateTime @map("period_end")
+  DateArchived    DateTime   @default(now()) @db.DateTime @map("date_archived")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+  AddedById       Int        @map("added_by")
+  LastModifiedById Int?       @map("last_modified_by")
+
+  // Relations
+  AddedBy         Users?      @relation("IndexDocumentAddedBy", fields: [AddedById], references: [Id])
+  LastModifiedBy  Users?      @relation("IndexDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  DocumentImages  DocumentImages[]
+
+  @@index([Payee])
+  @@index([period_start, period_end])
+  @@index([AddedById])
+  @@index([LastModifiedById])
+  @@map("index_document")
+}
+
+// Document Images (shared table for vouchers, index documents, and future document types)
+model DocumentImages {
+  Id              Int      @id @default(autoincrement()) @map("document_image_id")
+  ImageFile       String   @db.VarChar(500) @map("image_file")
+  ImageFileType   String?  @db.VarChar(50) @map("image_file_type")
+  ImageFileSize   Int?     @map("image_file_size")
+  VoucherId       Int?     @map("voucher_id")
+  IndexDocumentId Int?     @map("index_document_id")
+  OtherDocumentId   Int?     @map("other_document_id")
+  EvidencedById   Int?     @map("evidenced_by")
+
+  // Relations
+  Voucher         Vouchers?      @relation(fields: [VoucherId], references: [Id], onDelete: Cascade)
+  IndexDocument   IndexDocument? @relation(fields: [IndexDocumentId], references: [Id], onDelete: Cascade)
+  OtherDocument     OtherDocument? @relation(fields: [OtherDocumentId], references: [Id], onDelete: Cascade)
+  EvidencedBy     Users?         @relation("DocumentImageAddedBy", fields: [EvidencedById], references: [Id])
+
+  @@index([VoucherId])
+  @@index([IndexDocumentId])
+  @@index([OtherDocumentId])
+  @@index([EvidencedById])
+  @@map("document_images")
+}
+
+// Shelf Map - Cabinets
+model Cabinet {
+  Id              Int         @id @default(autoincrement()) @map("cabinet_id")
+  Name            String      @db.VarChar(255) @map("name")
+  Color           String      @db.VarChar(50) @map("color")
+  Building        String?     @db.VarChar(255) @map("building")
+  Floor           String?     @db.VarChar(255) @map("floor")
+  Room            String?     @db.VarChar(255) @map("room")
+  X               Float       @default(0) @map("x")
+  Y               Float       @default(0) @map("y")
+  Width           Float       @default(100) @map("width")
+  Height          Float       @default(60) @map("height")
+  DateCreated     DateTime    @default(now()) @db.DateTime @map("date_created")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+
+  Shelves         Shelf[]
+
+  @@index([Building])
+  @@index([Floor])
+  @@index([Room])
+  @@map("cabinets")
+}
+
+// Shelf Map - Shelves
+model Shelf {
+  Id              Int         @id @default(autoincrement()) @map("shelf_id")
+  Name            String      @db.VarChar(255) @map("name")
+  Location        String?     @db.VarChar(255) @map("location")
+  CabinetId       Int         @map("cabinet_id")
+  DateCreated     DateTime    @default(now()) @db.DateTime @map("date_created")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+
+  Cabinet         Cabinet     @relation(fields: [CabinetId], references: [Id], onDelete: Cascade)
+  Items           ShelfItem[]
+
+  @@index([CabinetId])
+  @@map("shelves")
+}
+
+// Shelf Map - Items
+model ShelfItem {
+  Id              Int         @id @default(autoincrement()) @map("shelf_item_id")
+  Label           String      @db.VarChar(255) @map("label")
+  Description     String?     @db.Text @map("description")
+  Category        String      @db.VarChar(255) @map("category")
+  ShelfId         Int         @map("shelf_id")
+  DateCreated     DateTime    @default(now()) @db.DateTime @map("date_created")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+
+  Shelf           Shelf       @relation(fields: [ShelfId], references: [Id], onDelete: Cascade)
+
+  @@index([ShelfId])
+  @@index([Category])
+  @@map("shelf_items")
+}
+
+// Other Document
+model OtherDocument {
+  Id         Int      @id @default(autoincrement()) @map("other_document_id")
+  Title     String   @db.VarChar(100) @map("title")
+  Particulars    String  @db.LongText @map("particulars")
+  DateArchived    DateTime   @default(now()) @db.DateTime @map("date_archived")
+  DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
+  AddedById       Int        @map("added_by")
+  LastModifiedById Int?       @map("last_modified_by")
+
+  // Relations
+  AddedBy         Users?      @relation("OtherDocumentAddedBy", fields: [AddedById], references: [Id])
+  LastModifiedBy  Users?      @relation("OtherDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  DocumentImages  DocumentImages[]
+
+  @@index([AddedById])
+  @@index([LastModifiedById])
+  @@index([DateArchived])
+  @@map("general_document")
 }
 
