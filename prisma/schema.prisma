@@ -32,9 +32,9 @@ model Users {
   IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
   IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
 
-  // Relations for General Documents
-  GeneralDocumentsAdded    GeneralDocument[] @relation("GeneralDocumentAddedBy")
-  GeneralDocumentsModified GeneralDocument[] @relation("GeneralDocumentModifiedBy")
+  // Relations for Other Documents
+  OtherDocumentsAdded    OtherDocument[] @relation("OtherDocumentAddedBy")
+  OtherDocumentsModified OtherDocument[] @relation("OtherDocumentModifiedBy")
 
   @@map("users")
 }
@@ -136,22 +136,26 @@ model DocumentImages {
   ImageFileSize   Int?     @map("image_file_size")
   VoucherId       Int?     @map("voucher_id")
   IndexDocumentId Int?     @map("index_document_id")
+  OtherDocumentId   Int?     @map("other_document_id")
   EvidencedById   Int?     @map("evidenced_by")
 
   // Relations
   Voucher         Vouchers?      @relation(fields: [VoucherId], references: [Id], onDelete: Cascade)
   IndexDocument   IndexDocument? @relation(fields: [IndexDocumentId], references: [Id], onDelete: Cascade)
+  OtherDocument     OtherDocument? @relation(fields: [OtherDocumentId], references: [Id], onDelete: Cascade)
   EvidencedBy     Users?         @relation("DocumentImageAddedBy", fields: [EvidencedById], references: [Id])
 
   @@index([VoucherId])
   @@index([IndexDocumentId])
+  @@index([OtherDocumentId])
   @@index([EvidencedById])
   @@map("document_images")
 }
 
-// General Document
-model GeneralDocument {
-  Id         Int      @id @default(autoincrement()) @map("general_document_id")
+// Other Document
+model OtherDocument {
+  Id         Int      @id @default(autoincrement()) @map("other_document_id")
+  Title     String   @db.VarChar(100) @map("title")
   Particulars    String  @db.LongText @map("particulars")
   DateArchived    DateTime   @default(now()) @db.DateTime @map("date_archived")
   DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
@@ -159,8 +163,9 @@ model GeneralDocument {
   LastModifiedById Int?       @map("last_modified_by")
 
   // Relations
-  AddedBy         Users?      @relation("GeneralDocumentAddedBy", fields: [AddedById], references: [Id])
-  LastModifiedBy  Users?      @relation("GeneralDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  AddedBy         Users?      @relation("OtherDocumentAddedBy", fields: [AddedById], references: [Id])
+  LastModifiedBy  Users?      @relation("OtherDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  DocumentImages  DocumentImages[]
 
   @@index([AddedById])
   @@index([LastModifiedById])

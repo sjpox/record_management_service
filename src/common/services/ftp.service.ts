@@ -98,6 +98,21 @@ export class FtpService {
     return path.posix.join(this.baseUploadDir, 'index-documents', payee, period);
   }
 
+  buildOtherDocumentPath(title: string): string {
+    const sanitizedTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '_').trim();
+    return path.posix.join(this.baseUploadDir, 'other-documents', sanitizedTitle);
+  }
+
+  async uploadOtherDocumentFiles(
+    files: Express.Multer.File[],
+    title: string,
+  ): Promise<UploadResult[]> {
+    if (files.length === 0) return [];
+
+    const remotePath = this.buildOtherDocumentPath(title);
+    return this.uploadFilesToPath(files, remotePath);
+  }
+
   async uploadIndexDocumentFiles(
     files: Express.Multer.File[],
     options: IndexDocumentUploadOptions,
