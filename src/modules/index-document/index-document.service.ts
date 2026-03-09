@@ -19,8 +19,31 @@ const selectFields = {
   DateLastUpdated: true,
   AddedById: true,
   LastModifiedById: true,
+  ShelfItemId: true,
   AddedBy: { select: { Id: true, FirstName: true, LastName: true } },
   LastModifiedBy: { select: { Id: true, FirstName: true, LastName: true } },
+  ShelfItem: {
+    select: {
+      Id: true,
+      Label: true,
+      Category: true,
+      Shelf: {
+        select: {
+          Id: true,
+          Name: true,
+          Cabinet: {
+            select: {
+              Id: true,
+              Name: true,
+              Building: { select: { Id: true, Name: true } },
+              Floor: { select: { Id: true, Name: true } },
+              Room: { select: { Id: true, Name: true } },
+            },
+          },
+        },
+      },
+    },
+  },
   _count: {
     select: {
       DocumentImages: true,
@@ -187,6 +210,7 @@ export class IndexDocumentService {
             period_start: new Date(dto.PeriodStart),
             period_end: new Date(dto.PeriodEnd),
             AddedById: userId,
+            ShelfItemId: dto.ShelfItemId ?? null,
           },
         });
 
@@ -256,6 +280,7 @@ export class IndexDocumentService {
       if (dto.Particulars !== undefined) updateData.Particulars = dto.Particulars;
       if (dto.PeriodStart !== undefined) updateData.period_start = new Date(dto.PeriodStart);
       if (dto.PeriodEnd !== undefined) updateData.period_end = new Date(dto.PeriodEnd);
+      if (dto.ShelfItemId !== undefined) updateData.ShelfItemId = dto.ShelfItemId ?? null;
       updateData.LastModifiedById = userId;
 
       const { before, updated } = await this.prisma.$transaction(async (tx) => {

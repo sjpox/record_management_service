@@ -11,6 +11,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { IndexDocumentModule } from './modules/index-document/index-document.module';
 import { OtherDocumentModule } from './modules/other-document/other-document.module';
 import { ShelfMapModule } from './modules/shelf-map/shelf-map.module';
+import { LocationModule } from './modules/location/location.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
@@ -26,6 +27,7 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     ReportsModule,
     IndexDocumentModule,
     OtherDocumentModule,
+    LocationModule,
     ShelfMapModule,
   ],
 })

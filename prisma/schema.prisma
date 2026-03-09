@@ -116,15 +116,19 @@ model IndexDocument {
   AddedById       Int        @map("added_by")
   LastModifiedById Int?       @map("last_modified_by")
 
+  ShelfItemId     Int?       @map("shelf_item_id")
+
   // Relations
   AddedBy         Users?      @relation("IndexDocumentAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("IndexDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   DocumentImages  DocumentImages[]
 
   @@index([Payee])
   @@index([period_start, period_end])
   @@index([AddedById])
   @@index([LastModifiedById])
+  @@index([ShelfItemId])
   @@map("index_document")
 }
 
@@ -152,14 +156,35 @@ model DocumentImages {
   @@map("document_images")
 }
 
+// Locations (configurable building, floor, room with parent-child hierarchy)
+model Location {
+  Id          Int         @id @default(autoincrement()) @map("location_id")
+  Name        String      @db.VarChar(255) @map("name")
+  Type        String      @db.VarChar(50) @map("type")
+  ParentId    Int?        @map("parent_id")
+  DateCreated DateTime    @default(now()) @db.DateTime @map("date_created")
+
+  Parent      Location?   @relation("LocationHierarchy", fields: [ParentId], references: [Id])
+  Children    Location[]  @relation("LocationHierarchy")
+
+  CabinetsAsBuilding  Cabinet[] @relation("CabinetBuilding")
+  CabinetsAsFloor     Cabinet[] @relation("CabinetFloor")
+  CabinetsAsRoom      Cabinet[] @relation("CabinetRoom")
+
+  @@unique([Name, Type, ParentId])
+  @@index([Type])
+  @@index([ParentId])
+  @@map("locations")
+}
+
 // Shelf Map - Cabinets
 model Cabinet {
   Id              Int         @id @default(autoincrement()) @map("cabinet_id")
   Name            String      @db.VarChar(255) @map("name")
   Color           String      @db.VarChar(50) @map("color")
-  Building        String?     @db.VarChar(255) @map("building")
-  Floor           String?     @db.VarChar(255) @map("floor")
-  Room            String?     @db.VarChar(255) @map("room")
+  BuildingId      Int?        @map("building_id")
+  FloorId         Int?        @map("floor_id")
+  RoomId          Int?        @map("room_id")
   X               Float       @default(0) @map("x")
   Y               Float       @default(0) @map("y")
   Width           Float       @default(100) @map("width")
@@ -167,11 +192,14 @@ model Cabinet {
   DateCreated     DateTime    @default(now()) @db.DateTime @map("date_created")
   DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
 
+  Building        Location?   @relation("CabinetBuilding", fields: [BuildingId], references: [Id])
+  Floor           Location?   @relation("CabinetFloor", fields: [FloorId], references: [Id])
+  Room            Location?   @relation("CabinetRoom", fields: [RoomId], references: [Id])
   Shelves         Shelf[]
 
-  @@index([Building])
-  @@index([Floor])
-  @@index([Room])
+  @@index([BuildingId])
+  @@index([FloorId])
+  @@index([RoomId])
   @@map("cabinets")
 }
 
@@ -202,6 +230,8 @@ model ShelfItem {
   DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
 
   Shelf           Shelf       @relation(fields: [ShelfId], references: [Id], onDelete: Cascade)
+  IndexDocuments  IndexDocument[]
+  OtherDocuments  OtherDocument[]
 
   @@index([ShelfId])
   @@index([Category])
@@ -218,14 +248,18 @@ model OtherDocument {
   AddedById       Int        @map("added_by")
   LastModifiedById Int?       @map("last_modified_by")
 
+  ShelfItemId     Int?       @map("shelf_item_id")
+
   // Relations
   AddedBy         Users?      @relation("OtherDocumentAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("OtherDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
+  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   DocumentImages  DocumentImages[]
 
   @@index([AddedById])
   @@index([LastModifiedById])
   @@index([DateArchived])
+  @@index([ShelfItemId])
   @@map("general_document")
 }
 
