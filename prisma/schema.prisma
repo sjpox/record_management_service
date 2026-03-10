@@ -224,7 +224,7 @@ model ShelfItem {
   Id              Int         @id @default(autoincrement()) @map("shelf_item_id")
   Label           String      @db.VarChar(255) @map("label")
   Description     String?     @db.Text @map("description")
-  Category        String      @db.VarChar(255) @map("category")
+  Category        String      @db.VarChar(191) @map("category")
   ShelfId         Int         @map("shelf_id")
   DateCreated     DateTime    @default(now()) @db.DateTime @map("date_created")
   DateLastUpdated DateTime    @default(now()) @updatedAt @db.DateTime @map("date_last_updated")
