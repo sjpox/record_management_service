@@ -57,7 +57,7 @@ export class IndexDocumentController {
   @Post()
   @ApiOperation({ summary: 'Create a new index document with optional photos' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   create(
     @Body() dto: CreateIndexDocumentDto,
     @CurrentUser() user: { Id: number },
@@ -79,7 +79,7 @@ export class IndexDocumentController {
   @Put(':id/photos')
   @ApiOperation({ summary: 'Update photos for an index document' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   updatePhotos(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateIndexDocumentPhotosDto,
