@@ -56,7 +56,7 @@ export class OtherDocumentController {
   @Post()
   @ApiOperation({ summary: 'Create a new other document with optional photos' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   create(
     @Body() dto: CreateOtherDocumentDto,
     @CurrentUser() user: { Id: number },
@@ -78,7 +78,7 @@ export class OtherDocumentController {
   @Put(':id/photos')
   @ApiOperation({ summary: 'Update photos for an other document' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   updatePhotos(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateOtherDocumentPhotosDto,

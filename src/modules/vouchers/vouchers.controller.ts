@@ -74,7 +74,7 @@ export class VouchersController {
   @Post()
   @ApiOperation({ summary: 'Create a new voucher with optional photos' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   create(
     @Body() dto: CreateVoucherDto,
     @CurrentUser() user: { Id: number },
@@ -102,7 +102,7 @@ export class VouchersController {
   @Put(':id/photos')
   @ApiOperation({ summary: 'Update photos for a voucher' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   updatePhotos(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePhotosDto,
@@ -146,7 +146,7 @@ export class VouchersController {
   @Post(':id/archive')
   @ApiOperation({ summary: 'Archive a voucher with optional photos' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 100))
   archive(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { Id: number },

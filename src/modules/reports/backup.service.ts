@@ -29,8 +29,8 @@ export class BackupService {
   private readonly ftpConfig = {
     host: process.env.FTP_HOST ?? '127.0.0.1',
     port: Number(process.env.FTP_PORT) || 21,
-    user: process.env.FTP_USER ?? 'root',
-    password: process.env.FTP_PASSWORD ?? '',
+    user: decodeURIComponent(process.env.FTP_USER ?? 'root'),
+    password: decodeURIComponent(process.env.FTP_PASSWORD ?? ''),
     secure: false,
     secureOptions: { rejectUnauthorized: false },
   };
@@ -91,8 +91,8 @@ export class BackupService {
     }
 
     return {
-      user: match[1],
-      password: match[2],
+      user: decodeURIComponent(match[1]),
+      password: decodeURIComponent(match[2]),
       host: match[3],
       port: match[4],
       database: match[5],
