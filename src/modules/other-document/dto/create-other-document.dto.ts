@@ -1,5 +1,6 @@
-import { IsNotEmpty, IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, IsOptional, IsInt } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class CreateOtherDocumentDto {
   @ApiProperty({ example: 'Office Supplies Receipt' })
@@ -11,4 +12,10 @@ export class CreateOtherDocumentDto {
   @IsNotEmpty()
   @IsString()
   Particulars: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  ShelfItemId?: number;
 }

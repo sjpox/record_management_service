@@ -1,5 +1,6 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsInt } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class CabinetQueryDto extends PaginationDto {
@@ -8,18 +9,21 @@ export class CabinetQueryDto extends PaginationDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by building' })
+  @ApiPropertyOptional({ description: 'Filter by building ID' })
   @IsOptional()
-  @IsString()
-  building?: string;
+  @IsInt()
+  @Type(() => Number)
+  buildingId?: number;
 
-  @ApiPropertyOptional({ description: 'Filter by floor' })
+  @ApiPropertyOptional({ description: 'Filter by floor ID' })
   @IsOptional()
-  @IsString()
-  floor?: string;
+  @IsInt()
+  @Type(() => Number)
+  floorId?: number;
 
-  @ApiPropertyOptional({ description: 'Filter by room' })
+  @ApiPropertyOptional({ description: 'Filter by room ID' })
   @IsOptional()
-  @IsString()
-  room?: string;
+  @IsInt()
+  @Type(() => Number)
+  roomId?: number;
 }

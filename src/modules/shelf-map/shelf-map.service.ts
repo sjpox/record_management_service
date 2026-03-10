@@ -11,13 +11,18 @@ import { UpdateItemDto } from './dto/update-item.dto';
 import { PaginatedResult } from '../../common/dto/pagination.dto';
 import { Cabinet } from '@prisma/client';
 
+const locationSelect = { select: { Id: true, Name: true, Type: true } };
+
 const cabinetSelectFields = {
   Id: true,
   Name: true,
   Color: true,
-  Building: true,
-  Floor: true,
-  Room: true,
+  BuildingId: true,
+  FloorId: true,
+  RoomId: true,
+  Building: locationSelect,
+  Floor: locationSelect,
+  Room: locationSelect,
   X: true,
   Y: true,
   Width: true,
@@ -70,21 +75,21 @@ export class ShelfMapService {
 
     const where: Record<string, unknown> = {};
 
-    if (query.building) {
-      where.Building = { contains: query.building };
+    if (query.buildingId) {
+      where.BuildingId = query.buildingId;
     }
-    if (query.floor) {
-      where.Floor = { contains: query.floor };
+    if (query.floorId) {
+      where.FloorId = query.floorId;
     }
-    if (query.room) {
-      where.Room = { contains: query.room };
+    if (query.roomId) {
+      where.RoomId = query.roomId;
     }
     if (query.search) {
       where.OR = [
         { Name: { contains: query.search } },
-        { Building: { contains: query.search } },
-        { Floor: { contains: query.search } },
-        { Room: { contains: query.search } },
+        { Building: { Name: { contains: query.search } } },
+        { Floor: { Name: { contains: query.search } } },
+        { Room: { Name: { contains: query.search } } },
       ];
     }
 
@@ -122,9 +127,9 @@ export class ShelfMapService {
       data: {
         Name: dto.Name,
         Color: dto.Color,
-        Building: dto.Building,
-        Floor: dto.Floor,
-        Room: dto.Room,
+        BuildingId: dto.BuildingId ?? null,
+        FloorId: dto.FloorId ?? null,
+        RoomId: dto.RoomId ?? null,
         X: dto.X ?? 0,
         Y: dto.Y ?? 0,
         Width: dto.Width ?? 100,
@@ -151,9 +156,9 @@ export class ShelfMapService {
     const updateData: Record<string, unknown> = {};
     if (dto.Name !== undefined) updateData.Name = dto.Name;
     if (dto.Color !== undefined) updateData.Color = dto.Color;
-    if (dto.Building !== undefined) updateData.Building = dto.Building;
-    if (dto.Floor !== undefined) updateData.Floor = dto.Floor;
-    if (dto.Room !== undefined) updateData.Room = dto.Room;
+    if (dto.BuildingId !== undefined) updateData.BuildingId = dto.BuildingId ?? null;
+    if (dto.FloorId !== undefined) updateData.FloorId = dto.FloorId ?? null;
+    if (dto.RoomId !== undefined) updateData.RoomId = dto.RoomId ?? null;
     if (dto.X !== undefined) updateData.X = dto.X;
     if (dto.Y !== undefined) updateData.Y = dto.Y;
     if (dto.Width !== undefined) updateData.Width = dto.Width;

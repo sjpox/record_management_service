@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsInt } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -13,20 +13,23 @@ export class CreateCabinetDto {
   @IsString()
   Color: string;
 
-  @ApiPropertyOptional({ example: 'Main Building' })
+  @ApiPropertyOptional({ example: 1 })
   @IsOptional()
-  @IsString()
-  Building?: string;
+  @IsInt()
+  @Type(() => Number)
+  BuildingId?: number;
 
-  @ApiPropertyOptional({ example: '2nd Floor' })
+  @ApiPropertyOptional({ example: 3 })
   @IsOptional()
-  @IsString()
-  Floor?: string;
+  @IsInt()
+  @Type(() => Number)
+  FloorId?: number;
 
-  @ApiPropertyOptional({ example: 'Room 201' })
+  @ApiPropertyOptional({ example: 6 })
   @IsOptional()
-  @IsString()
-  Room?: string;
+  @IsInt()
+  @Type(() => Number)
+  RoomId?: number;
 
   @ApiPropertyOptional({ example: 100 })
   @IsOptional()
