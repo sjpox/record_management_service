@@ -107,7 +107,7 @@ model AuditLog {
 // Index Document
 model IndexDocument {
   Id         Int      @id @default(autoincrement()) @map("index_document_id")
-  Payee     String   @db.VarChar(255) @map("payee")
+  Payee     String   @db.VarChar(191) @map("payee")
   Particulars    String  @db.LongText @map("particulars")
   period_start  DateTime  @db.DateTime @map("period_start")
   period_end  DateTime  @db.DateTime @map("period_end")
@@ -159,7 +159,7 @@ model DocumentImages {
 // Locations (configurable building, floor, room with parent-child hierarchy)
 model Location {
   Id          Int         @id @default(autoincrement()) @map("location_id")
-  Name        String      @db.VarChar(255) @map("name")
+  Name        String      @db.VarChar(120) @map("name")
   Type        String      @db.VarChar(50) @map("type")
   ParentId    Int?        @map("parent_id")
   DateCreated DateTime    @default(now()) @db.DateTime @map("date_created")
