@@ -4,6 +4,18 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.6.0
+
+**New Features**
+- Employment status report API (`POST /employment-report/generate`) — accepts employment records and generates a formatted Excel (.xlsx) file download
+  - Report columns: Employment Status Before Training, Date Employed, Occupation, Name of Employer, Complete Address of Employer, Classification of Worker, Monthly Income/Salary
+  - Styled headers with merged cells matching TWSP report layout
+  - Returns Excel file as a direct download response
+- Voucher sorting — `GET /vouchers` now supports `sortBy` and `sortOrder` query parameters
+  - Sortable fields: `DateAdded`, `DateArchived`, `DateDisbursed`, `DateLastUpdated`, `VoucherNo`, `Payee`, `Amount`
+  - Sort order: `asc` or `desc` (default: `desc`)
+  - Example: `GET /vouchers?sortBy=DateArchived&sortOrder=desc`
+
 ### v1.5.1
 
 **Improvements**
@@ -309,6 +321,8 @@ photos: [files...]
 | `transactionNo` | Filter by transaction number |
 | `payee` | Filter by payee |
 | `claimType` | Filter by claim type |
+| `sortBy` | Sort by field (`DateAdded`, `DateArchived`, `DateDisbursed`, `DateLastUpdated`, `VoucherNo`, `Payee`, `Amount`) |
+| `sortOrder` | Sort order (`asc` or `desc`, default: `desc`) |
 
 **Bulk Create:**
 ```json
@@ -380,6 +394,31 @@ crops: [...]                (optional - crop and replace existing images)
       "top": 100,
       "width": 800,
       "height": 600
+    }
+  ]
+}
+```
+
+### Employment Report (all endpoints require Bearer token)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/employment-report/generate` | Generate employment status report (Excel download) |
+
+**Generate Report:**
+```json
+POST /api/employment-report/generate
+{
+  "title": "Employment Status",
+  "records": [
+    {
+      "employmentStatusBefore": "Unemployed",
+      "dateEmployed": "15-Jan-2025",
+      "occupation": "Welder",
+      "nameOfEmployer": "ABC Corp",
+      "completeAddressOfEmployer": "123 Main St, Bohol",
+      "classificationOfWorker": "Regular",
+      "monthlyIncomeSalary": 15000
     }
   ]
 }
@@ -476,6 +515,11 @@ src/
     │   ├── reports.service.ts
     │   ├── backup.service.ts
     │   └── backup.controller.ts
+    ├── employment-report/
+    │   ├── employment-report.module.ts
+    │   ├── employment-report.controller.ts
+    │   ├── employment-report.service.ts
+    │   └── dto/
     ├── audit/
     │   ├── audit.module.ts
     │   ├── audit.service.ts

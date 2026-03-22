@@ -117,6 +117,8 @@ export class VouchersService {
       payee?: string;
       claimType?: string;
     },
+    sortBy?: string,
+    sortOrder?: 'asc' | 'desc',
   ): Promise<PaginatedResult<Vouchers>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
@@ -167,7 +169,7 @@ export class VouchersService {
             select: { ImageFile: true },
           },
         },
-        orderBy: { DateAdded: 'desc' },
+        orderBy: { [sortBy ?? 'DateAdded']: sortOrder ?? 'desc' },
       }),
       this.prisma.vouchers.count({ where }),
     ]);

@@ -40,7 +40,7 @@ export class VouchersController {
       payee: query.payee,
       claimType: query.claimType,
     };
-    return this.service.findAll(query, isArchived, query.search, filters);
+    return this.service.findAll(query, isArchived, query.search, filters, query.sortBy, query.sortOrder);
   }
 
   @Get('stats')
