@@ -28,6 +28,10 @@ model Users {
   DocumentImagesAdded  DocumentImages[] @relation("DocumentImageAddedBy")
   AuditLogs            AuditLog[]
 
+  // Relations for Chat
+  ChatParticipants         ChatParticipant[]  @relation("ChatParticipantUser")
+  ChatMessagesSent         ChatMessage[]      @relation("ChatMessageSender")
+
   // Relations for Index Documents
   IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
   IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
@@ -271,5 +275,54 @@ model OtherDocument {
   @@index([DateArchived])
   @@index([ShelfItemId])
   @@map("general_document")
+}
+
+// Chat Conversations (supports 1-to-1 and group chats)
+model ChatConversation {
+  Id        Int       @id @default(autoincrement()) @map("conversation_id")
+  Name      String?   @db.VarChar(255) @map("name")
+  IsGroup   Boolean   @default(false) @map("is_group")
+  CreatedById Int?    @map("created_by")
+  CreatedAt DateTime  @default(now()) @db.DateTime @map("created_at")
+  UpdatedAt DateTime  @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  Participants ChatParticipant[]
+  Messages     ChatMessage[]
+
+  @@index([UpdatedAt])
+  @@map("chat_conversations")
+}
+
+// Chat Participants (join table for conversation members)
+model ChatParticipant {
+  Id              Int       @id @default(autoincrement()) @map("participant_id")
+  ConversationId  Int       @map("conversation_id")
+  UserId          Int       @map("user_id")
+  JoinedAt        DateTime  @default(now()) @db.DateTime @map("joined_at")
+
+  Conversation    ChatConversation @relation(fields: [ConversationId], references: [Id], onDelete: Cascade)
+  User            Users            @relation("ChatParticipantUser", fields: [UserId], references: [Id])
+
+  @@unique([ConversationId, UserId])
+  @@index([ConversationId])
+  @@index([UserId])
+  @@map("chat_participants")
+}
+
+// Chat Messages
+model ChatMessage {
+  Id              Int       @id @default(autoincrement()) @map("message_id")
+  ConversationId  Int       @map("conversation_id")
+  SenderId        Int       @map("sender_id")
+  Content         String    @db.Text @map("content")
+  CreatedAt       DateTime  @default(now()) @db.DateTime @map("created_at")
+  ReadAt          DateTime? @db.DateTime @map("read_at")
+
+  Conversation    ChatConversation @relation(fields: [ConversationId], references: [Id], onDelete: Cascade)
+  Sender          Users            @relation("ChatMessageSender", fields: [SenderId], references: [Id])
+
+  @@index([ConversationId, CreatedAt])
+  @@index([SenderId])
+  @@map("chat_messages")
 }
 
