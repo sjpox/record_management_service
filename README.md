@@ -4,6 +4,11 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.7.1
+
+**Bug Fixes**
+- Fixed FTP backup S3 upload still failing for files larger than 2 GiB — replaced `PutObjectCommand` with multipart `Upload` from `@aws-sdk/lib-storage` which streams large files in chunks without buffer size limits
+
 ### v1.7.0
 
 **Improvements**

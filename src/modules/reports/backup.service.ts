@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { Client as FtpClient } from 'basic-ftp';
 import { exec } from 'child_process';
 import * as fs from 'fs';
@@ -45,19 +46,19 @@ export class BackupService {
     contentType: string,
   ): Promise<{ destination: 's3' | 'local'; location: string }> {
     const filename = path.basename(filePath);
-    const fileSize = fs.statSync(filePath).size;
 
     try {
       const fileStream = fs.createReadStream(filePath);
-      await this.s3.send(
-        new PutObjectCommand({
+      const upload = new Upload({
+        client: this.s3,
+        params: {
           Bucket: this.bucket,
           Key: s3Key,
           Body: fileStream,
           ContentType: contentType,
-          ContentLength: fileSize,
-        }),
-      );
+        },
+      });
+      await upload.done();
       return { destination: 's3', location: `s3://${this.bucket}/${s3Key}` };
     } catch (s3Error) {
       this.logger.warn(
