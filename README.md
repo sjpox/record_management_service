@@ -4,6 +4,14 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.7.0
+
+**Improvements**
+- Maintenance mode is now persisted in the database (`maintenance_config` table) instead of environment variables — state survives server restarts
+- Added `superadmin` role — both `admin` and `superadmin` users can access the system during maintenance mode
+- Auth endpoints (`/auth/login`, `/auth/refresh`) are now excluded from maintenance mode so admins can log in while the system is under maintenance
+- Fixed FTP backup failure for files larger than 2 GiB — replaced `fs.readFileSync` with `fs.createReadStream` for S3 uploads to support any file size
+
 ### v1.6.0
 
 **New Features**

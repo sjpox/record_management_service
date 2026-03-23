@@ -13,7 +13,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
-    if (!this.maintenanceService.isActive()) {
+    if (!(await this.maintenanceService.isActive())) {
       return next();
     }
 
@@ -37,7 +37,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
 
     res.status(503).json({
       statusCode: 503,
-      message: this.maintenanceService.getMessage(),
+      message: await this.maintenanceService.getMessage(),
     });
   }
 

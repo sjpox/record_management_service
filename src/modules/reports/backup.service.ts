@@ -44,16 +44,18 @@ export class BackupService {
     s3Key: string,
     contentType: string,
   ): Promise<{ destination: 's3' | 'local'; location: string }> {
-    const fileBuffer = fs.readFileSync(filePath);
     const filename = path.basename(filePath);
+    const fileSize = fs.statSync(filePath).size;
 
     try {
+      const fileStream = fs.createReadStream(filePath);
       await this.s3.send(
         new PutObjectCommand({
           Bucket: this.bucket,
           Key: s3Key,
-          Body: fileBuffer,
+          Body: fileStream,
           ContentType: contentType,
+          ContentLength: fileSize,
         }),
       );
       return { destination: 's3', location: `s3://${this.bucket}/${s3Key}` };

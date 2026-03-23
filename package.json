@@ -1,6 +1,6 @@
 {
   "name": "record-management-service",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Record Management Service API",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",

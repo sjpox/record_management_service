@@ -29,12 +29,11 @@ export class MaintenanceGateway
     this.logger.log('Maintenance WebSocket gateway initialized');
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
+    const isActive = await this.maintenanceService.isActive();
     client.emit('maintenanceStatus', {
-      maintenance: this.maintenanceService.isActive(),
-      message: this.maintenanceService.isActive()
-        ? this.maintenanceService.getMessage()
-        : '',
+      maintenance: isActive,
+      message: isActive ? await this.maintenanceService.getMessage() : '',
     });
     this.logger.log(`Client connected: ${client.id}`);
   }

@@ -238,6 +238,16 @@ model ShelfItem {
   @@map("shelf_items")
 }
 
+// Maintenance Configuration (single-row table)
+model MaintenanceConfig {
+  Id          Int      @id @default(1) @map("config_id")
+  IsActive    Boolean  @default(false) @map("is_active")
+  Message     String   @default("The system is currently under maintenance. Please try again later.") @db.VarChar(500) @map("message")
+  UpdatedAt   DateTime @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  @@map("maintenance_config")
+}
+
 // Other Document
 model OtherDocument {
   Id         Int      @id @default(autoincrement()) @map("other_document_id")

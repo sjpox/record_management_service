@@ -39,29 +39,28 @@ export class HealthController {
 
   @Get('status')
   @ApiOperation({ summary: 'Check maintenance mode status' })
-  getStatus() {
+  async getStatus() {
+    const isActive = await this.maintenanceService.isActive();
     return {
-      maintenance: this.maintenanceService.isActive(),
-      message: this.maintenanceService.isActive()
-        ? this.maintenanceService.getMessage()
-        : '',
+      maintenance: isActive,
+      message: isActive ? await this.maintenanceService.getMessage() : '',
     };
   }
 
   @Post('maintenance')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Toggle maintenance mode' })
-  setMaintenance(
+  async setMaintenance(
     @Body() body: SetMaintenanceDto,
     @CurrentUser() user: { Id: number },
     @Req() req: Request,
   ) {
     const before = {
-      maintenance: this.maintenanceService.isActive(),
-      message: this.maintenanceService.getMessage(),
+      maintenance: await this.maintenanceService.isActive(),
+      message: await this.maintenanceService.getMessage(),
     };
 
-    const result = this.maintenanceService.setMaintenance(body.active, body.message);
+    const result = await this.maintenanceService.setMaintenance(body.active, body.message);
 
     this.auditService.log({
       entityType: 'Maintenance',
