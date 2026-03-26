@@ -1,0 +1,99 @@
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn, IsInt, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+class AssigneeDto {
+  @ApiPropertyOptional({ description: 'User ID if assignee exists in the system' })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  userId?: number;
+
+  @ApiPropertyOptional({ description: 'Name if assignee is not a system user' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+class ActionDto {
+  @IsString()
+  @IsNotEmpty()
+  actionRequired: string;
+
+  @IsString()
+  @IsNotEmpty()
+  dueDate: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AssigneeDto)
+  assignees?: AssigneeDto[];
+}
+
+class RoutingDto {
+  @IsString()
+  @IsNotEmpty()
+  routedTo: string;
+
+  @IsOptional()
+  @IsString()
+  routedToRole?: string;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+}
+
+export class CreateCommDto {
+  @ApiProperty()
+  @IsString()
+  @IsIn(['incoming', 'outgoing'])
+  type: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  subject: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  sender: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  recipient: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  dateReceived: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @IsIn(['low', 'normal', 'urgent'])
+  priority?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ActionDto)
+  actions?: ActionDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoutingDto)
+  routings?: RoutingDto[];
+}
