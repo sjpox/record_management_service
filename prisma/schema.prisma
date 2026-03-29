@@ -30,9 +30,9 @@ model Users {
 
   // Relations for Communications
   CommsCreated             Communication[]     @relation("CommCreatedBy")
+  CommsArchived            Communication[]     @relation("CommArchivedBy")
   CommImagesUploaded       CommImage[]          @relation("CommImageUploadedBy")
   CommActionsCompleted     CommAction[]         @relation("CommActionCompletedBy")
-  CommRoutingsRouted       CommRouting[]        @relation("CommRoutingRoutedBy")
   CommActionAssignees      CommActionAssignee[] @relation("CommActionAssigneeUser")
   CommActionReplies        CommActionReply[]    @relation("CommActionReplySender")
   CommReplyImages          CommActionReplyImage[] @relation("CommReplyImageUploader")
@@ -245,6 +245,7 @@ model ShelfItem {
   Shelf           Shelf       @relation(fields: [ShelfId], references: [Id], onDelete: Cascade)
   IndexDocuments  IndexDocument[]
   OtherDocuments  OtherDocument[]
+  Communications  Communication[]
 
   @@index([ShelfId])
   @@index([Category])
@@ -296,16 +297,22 @@ model Communication {
   Sender          String      @db.VarChar(255) @map("sender")
   Recipient       String      @db.VarChar(255) @map("recipient")
   DateReceived    DateTime    @db.DateTime @map("date_received")
+  DateSent        DateTime?   @db.DateTime @map("date_sent")
   Status          String      @default("pending") @db.VarChar(20) @map("status")
   Priority        String      @default("normal") @db.VarChar(20) @map("priority")
   CreatedById     Int         @map("created_by")
   CreatedAt       DateTime    @default(now()) @db.DateTime @map("created_at")
   UpdatedAt       DateTime    @default(now()) @updatedAt @db.DateTime @map("updated_at")
+  IsArchived      Boolean     @default(false) @map("is_archived")
+  ArchivedAt      DateTime?   @db.DateTime @map("archived_at")
+  ArchivedById    Int?        @map("archived_by")
+  ShelfItemId     Int?        @map("shelf_item_id")
 
   CreatedBy       Users       @relation("CommCreatedBy", fields: [CreatedById], references: [Id])
+  ArchivedBy      Users?      @relation("CommArchivedBy", fields: [ArchivedById], references: [Id])
+  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   Images          CommImage[]
   Actions         CommAction[]
-  Routings        CommRouting[]
 
   @@index([Type])
   @@index([Status])
@@ -333,11 +340,12 @@ model CommAction {
   Id              Int         @id @default(autoincrement()) @map("action_id")
   CommunicationId Int         @map("comm_id")
   ActionRequired  String      @db.Text @map("action_required")
-  DueDate         DateTime    @db.DateTime @map("due_date")
+  DueDate         DateTime?   @db.DateTime @map("due_date")
   Status          String      @default("pending") @db.VarChar(20) @map("status")
   CompletedAt     DateTime?   @db.DateTime @map("completed_at")
   CompletedById   Int?        @map("completed_by")
   Notes           String?     @db.Text @map("notes")
+  CreatedAt       DateTime    @default(now()) @db.DateTime @map("created_at")
 
   Communication   Communication          @relation(fields: [CommunicationId], references: [Id], onDelete: Cascade)
   CompletedBy     Users?                 @relation("CommActionCompletedBy", fields: [CompletedById], references: [Id])
@@ -362,24 +370,6 @@ model CommActionAssignee {
   @@index([UserId])
   @@index([Name])
   @@map("comm_action_assignees")
-}
-
-model CommRouting {
-  Id              Int         @id @default(autoincrement()) @map("routing_id")
-  CommunicationId Int         @map("comm_id")
-  RoutedTo        String      @db.Text @map("routed_to")
-  RoutedToRole    String?     @db.VarChar(255) @map("routed_to_role")
-  RoutedById      Int         @map("routed_by")
-  RoutedAt        DateTime    @default(now()) @db.DateTime @map("routed_at")
-  Remarks         String?     @db.Text @map("remarks")
-  Acknowledged    Boolean     @default(false) @map("acknowledged")
-  AcknowledgedAt  DateTime?   @db.DateTime @map("acknowledged_at")
-
-  Communication   Communication @relation(fields: [CommunicationId], references: [Id], onDelete: Cascade)
-  RoutedBy        Users         @relation("CommRoutingRoutedBy", fields: [RoutedById], references: [Id])
-
-  @@index([CommunicationId])
-  @@map("comm_routings")
 }
 
 // Action Item Reply Thread

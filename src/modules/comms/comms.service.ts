@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
 import sharp from 'sharp';
@@ -9,6 +10,16 @@ const userSelect = { Id: true, FirstName: true, LastName: true };
 
 const commInclude = {
   CreatedBy: { select: userSelect },
+  ArchivedBy: { select: userSelect },
+  ShelfItem: {
+    include: {
+      Shelf: {
+        include: {
+          Cabinet: { select: { Id: true, Name: true } },
+        },
+      },
+    },
+  },
   Images: true,
   Actions: {
     include: {
@@ -20,10 +31,6 @@ const commInclude = {
     },
     orderBy: { DueDate: 'asc' as const },
   },
-  Routings: {
-    include: { RoutedBy: { select: userSelect } },
-    orderBy: { RoutedAt: 'desc' as const },
-  },
 };
 
 @Injectable()
@@ -31,6 +38,7 @@ export class CommsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ftpService: FtpService,
+    private readonly audit: AuditService,
   ) {}
 
   private formatComm(comm: any) {
@@ -43,13 +51,14 @@ export class CommsService {
       sender: comm.Sender,
       recipient: comm.Recipient,
       dateReceived: comm.DateReceived.toISOString(),
+      dateSent: comm.DateSent?.toISOString() || null,
       status: comm.Status,
       priority: comm.Priority,
       actions: (comm.Actions || []).map((a: any) => ({
         id: a.Id,
         communicationId: a.CommunicationId,
         actionRequired: a.ActionRequired,
-        dueDate: a.DueDate.toISOString(),
+        dueDate: a.DueDate?.toISOString() || null,
         status: a.Status,
         assignees: (a.Assignees || []).map((assignee: any) => ({
           id: assignee.Id,
@@ -58,25 +67,13 @@ export class CommsService {
             ? `${assignee.User.FirstName} ${assignee.User.LastName}`
             : assignee.Name,
         })),
+        createdAt: a.CreatedAt.toISOString(),
         replyCount: a._count?.Replies || 0,
         completedAt: a.CompletedAt?.toISOString() || null,
         completedBy: a.CompletedBy
           ? { id: a.CompletedBy.Id, firstName: a.CompletedBy.FirstName, lastName: a.CompletedBy.LastName }
           : null,
         notes: a.Notes || null,
-      })),
-      routings: (comm.Routings || []).map((r: any) => ({
-        id: r.Id,
-        communicationId: r.CommunicationId,
-        routedTo: r.RoutedTo,
-        routedToRole: r.RoutedToRole || null,
-        routedBy: r.RoutedBy
-          ? { id: r.RoutedBy.Id, firstName: r.RoutedBy.FirstName, lastName: r.RoutedBy.LastName }
-          : null,
-        routedAt: r.RoutedAt.toISOString(),
-        remarks: r.Remarks || null,
-        acknowledged: r.Acknowledged,
-        acknowledgedAt: r.AcknowledgedAt?.toISOString() || null,
       })),
       images: (comm.Images || []).map((img: any) => ({
         id: img.Id,
@@ -89,6 +86,22 @@ export class CommsService {
         : null,
       createdAt: comm.CreatedAt.toISOString(),
       updatedAt: comm.UpdatedAt.toISOString(),
+      isArchived: comm.IsArchived,
+      archivedAt: comm.ArchivedAt?.toISOString() || null,
+      archivedBy: comm.ArchivedBy
+        ? { id: comm.ArchivedBy.Id, firstName: comm.ArchivedBy.FirstName, lastName: comm.ArchivedBy.LastName }
+        : null,
+      shelfItem: comm.ShelfItem
+        ? {
+            id: comm.ShelfItem.Id,
+            label: comm.ShelfItem.Label,
+            shelf: {
+              id: comm.ShelfItem.Shelf.Id,
+              name: comm.ShelfItem.Shelf.Name,
+              cabinet: comm.ShelfItem.Shelf.Cabinet,
+            },
+          }
+        : null,
     };
   }
 
@@ -99,9 +112,12 @@ export class CommsService {
     status?: string;
     priority?: string;
     search?: string;
+    isArchived?: boolean;
+    sortBy?: string;
+    sortOrder?: string;
   }) {
-    const { page = 1, limit = 10, type, status, priority, search } = params;
-    const where: any = {};
+    const { page = 1, limit = 10, type, status, priority, search, isArchived = false, sortBy, sortOrder } = params;
+    const where: any = { IsArchived: isArchived };
 
     if (type && type !== 'all') where.Type = type;
     if (status && status !== 'all') where.Status = status;
@@ -115,11 +131,21 @@ export class CommsService {
       ];
     }
 
+    const sortFieldMap: Record<string, string> = {
+      archivedAt: 'ArchivedAt',
+      createdAt: 'CreatedAt',
+      updatedAt: 'UpdatedAt',
+      dateReceived: 'DateReceived',
+      dateSent: 'DateSent',
+    };
+    const orderByField = (sortBy && sortFieldMap[sortBy]) || 'CreatedAt';
+    const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
+
     const [data, total] = await Promise.all([
       this.prisma.communication.findMany({
         where,
         include: commInclude,
-        orderBy: { CreatedAt: 'desc' },
+        orderBy: { [orderByField]: orderByDir },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -136,15 +162,17 @@ export class CommsService {
   }
 
   async findOne(id: number) {
-    const comm = await this.prisma.communication.findUnique({
-      where: { Id: id },
-      include: commInclude,
-    });
-    if (!comm) throw new NotFoundException('Communication not found');
-    return this.formatComm(comm);
+    return this.getDetails(id);
   }
 
   async create(dto: CreateCommDto, userId: number) {
+    if (dto.type === 'incoming' && !dto.dateReceived) {
+      throw new BadRequestException('dateReceived is required for incoming communications');
+    }
+    if (dto.type === 'outgoing' && !dto.dateSent) {
+      throw new BadRequestException('dateSent is required for outgoing communications');
+    }
+
     const prefix = dto.type === 'incoming' ? 'IN' : 'OUT';
     const year = new Date().getFullYear();
     const count = await this.prisma.communication.count({
@@ -161,14 +189,15 @@ export class CommsService {
         Description: dto.description || null,
         Sender: dto.sender,
         Recipient: dto.recipient,
-        DateReceived: new Date(dto.dateReceived),
+        DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
+        DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
         Priority: dto.priority || 'normal',
         CreatedById: userId,
         Actions: dto.actions?.length
           ? {
               create: dto.actions.map((a) => ({
                 ActionRequired: a.actionRequired,
-                DueDate: new Date(a.dueDate),
+                DueDate: a.dueDate ? new Date(a.dueDate) : null,
                 Assignees: a.assignees?.length
                   ? {
                       create: a.assignees.map((assignee) => ({
@@ -180,24 +209,16 @@ export class CommsService {
               })),
             }
           : undefined,
-        Routings: dto.routings?.length
-          ? {
-              create: dto.routings.map((r) => ({
-                RoutedTo: r.routedTo,
-                RoutedToRole: r.routedToRole || null,
-                RoutedById: userId,
-                Remarks: r.remarks || null,
-              })),
-            }
-          : undefined,
       },
       include: commInclude,
     });
 
-    return this.formatComm(comm);
+    const result = this.formatComm(comm);
+    await this.audit.log({ entityType: 'Communication', entityId: comm.Id, action: 'create', userId, changes: { after: result } });
+    return result;
   }
 
-  async update(id: number, dto: UpdateCommDto, userId: number) {
+  async update(id: number, dto: UpdateCommDto, userId?: number) {
     const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
     if (!existing) throw new NotFoundException('Communication not found');
 
@@ -208,6 +229,7 @@ export class CommsService {
     if (dto.sender) updateData.Sender = dto.sender;
     if (dto.recipient) updateData.Recipient = dto.recipient;
     if (dto.dateReceived) updateData.DateReceived = new Date(dto.dateReceived);
+    if (dto.dateSent !== undefined) updateData.DateSent = dto.dateSent ? new Date(dto.dateSent) : null;
     if (dto.priority) updateData.Priority = dto.priority;
     if (dto.status) updateData.Status = dto.status;
 
@@ -226,7 +248,7 @@ export class CommsService {
             where: { Id: a.id },
             data: {
               ActionRequired: a.actionRequired,
-              DueDate: new Date(a.dueDate),
+              ...(a.dueDate && { DueDate: new Date(a.dueDate) }),
             },
           });
 
@@ -255,7 +277,7 @@ export class CommsService {
             data: {
               CommunicationId: id,
               ActionRequired: a.actionRequired,
-              DueDate: new Date(a.dueDate),
+              DueDate: a.dueDate ? new Date(a.dueDate) : null,
               Assignees: a.assignees?.length
                 ? {
                     create: a.assignees.map((assignee) => ({
@@ -270,53 +292,22 @@ export class CommsService {
       }
     }
 
-    if (dto.routings) {
-      const incomingRoutingIds = dto.routings.filter((r) => r.id).map((r) => r.id!);
-
-      // Delete routings not in the incoming list
-      await this.prisma.commRouting.deleteMany({
-        where: { CommunicationId: id, Id: { notIn: incomingRoutingIds } },
-      });
-
-      for (const r of dto.routings) {
-        if (r.id) {
-          // Update existing routing
-          await this.prisma.commRouting.update({
-            where: { Id: r.id },
-            data: {
-              RoutedTo: r.routedTo,
-              RoutedToRole: r.routedToRole || null,
-              Remarks: r.remarks || null,
-            },
-          });
-        } else {
-          // Create new routing
-          await this.prisma.commRouting.create({
-            data: {
-              CommunicationId: id,
-              RoutedTo: r.routedTo,
-              RoutedToRole: r.routedToRole || null,
-              RoutedById: userId,
-              Remarks: r.remarks || null,
-            },
-          });
-        }
-      }
-    }
-
     const comm = await this.prisma.communication.update({
       where: { Id: id },
       data: updateData,
       include: commInclude,
     });
 
-    return this.formatComm(comm);
+    const result = this.formatComm(comm);
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'update', userId, changes: { after: result } });
+    return result;
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
     const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
     if (!existing) throw new NotFoundException('Communication not found');
     await this.prisma.communication.delete({ where: { Id: id } });
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'delete', userId });
   }
 
   async toggleActionStatus(actionId: number, userId: number) {
@@ -333,46 +324,101 @@ export class CommsService {
       },
     });
 
-    const allActions = await this.prisma.commAction.findMany({
-      where: { CommunicationId: action.CommunicationId },
-    });
-    let commStatus = 'pending';
-    if (allActions.length > 0) {
-      const allCompleted = allActions.every((a) => a.Status === 'completed' || (a.Id === actionId && isCompleting));
-      const anyCompleted = allActions.some((a) => a.Status === 'completed' || (a.Id === actionId && isCompleting));
-      if (allCompleted) commStatus = 'completed';
-      else if (anyCompleted) commStatus = 'in-progress';
-    }
-    await this.prisma.communication.update({
-      where: { Id: action.CommunicationId },
-      data: { Status: commStatus },
-    });
+    await this.recalcCommStatus(action.CommunicationId, actionId, isCompleting);
 
-    return this.findOne(action.CommunicationId);
+    await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: isCompleting ? 'complete' : 'reopen', userId });
+    return this.getDetails(action.CommunicationId);
   }
 
-  async acknowledgeRouting(routingId: number) {
-    const routing = await this.prisma.commRouting.findUnique({ where: { Id: routingId } });
-    if (!routing) throw new NotFoundException('Routing not found');
-    if (routing.Acknowledged) return this.findOne(routing.CommunicationId);
-
-    await this.prisma.commRouting.update({
-      where: { Id: routingId },
-      data: { Acknowledged: true, AcknowledgedAt: new Date() },
+  private async recalcCommStatus(commId: number, toggledActionId?: number, isCompleting?: boolean) {
+    const allActions = await this.prisma.commAction.findMany({
+      where: { CommunicationId: commId },
     });
 
-    return this.findOne(routing.CommunicationId);
+    const now = new Date();
+    let commStatus = 'pending';
+
+    if (allActions.length > 0) {
+      const allCompleted = allActions.every(
+        (a) => a.Status === 'completed' || (a.Id === toggledActionId && isCompleting),
+      );
+      if (allCompleted) {
+        commStatus = 'completed';
+      } else {
+        const hasOverdue = allActions.some(
+          (a) =>
+            a.Status !== 'completed' &&
+            !(a.Id === toggledActionId && isCompleting) &&
+            a.DueDate !== null && a.DueDate < now,
+        );
+        const anyCompleted = allActions.some(
+          (a) => a.Status === 'completed' || (a.Id === toggledActionId && isCompleting),
+        );
+        if (hasOverdue) commStatus = 'overdue';
+        else if (anyCompleted) commStatus = 'in-progress';
+      }
+    }
+
+    await this.prisma.communication.update({
+      where: { Id: commId },
+      data: { Status: commStatus },
+    });
+  }
+
+  async archive(id: number, userId: number, shelfItemId?: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: {
+        IsArchived: true,
+        ArchivedAt: new Date(),
+        ArchivedById: userId,
+        ShelfItemId: shelfItemId ?? null,
+      },
+    });
+
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'archive', userId, changes: { after: { shelfItemId } } });
+    return this.getDetails(id);
+  }
+
+async updateShelf(id: number, shelfItemId?: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: { ShelfItemId: shelfItemId ?? null },
+    });
+
+    return this.getDetails(id);
+  }
+
+  async unarchive(id: number, userId: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+    if (!existing.IsArchived) throw new BadRequestException('Communication is not archived');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: { IsArchived: false, ArchivedAt: null, ArchivedById: null, ShelfItemId: null },
+    });
+
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'unarchive', userId });
+    return this.getDetails(id);
   }
 
   async getStats() {
+    const active = { IsArchived: false };
     const [total, incoming, outgoing, pending, inProgress, completed, overdue] = await Promise.all([
-      this.prisma.communication.count(),
-      this.prisma.communication.count({ where: { Type: 'incoming' } }),
-      this.prisma.communication.count({ where: { Type: 'outgoing' } }),
-      this.prisma.communication.count({ where: { Status: 'pending' } }),
-      this.prisma.communication.count({ where: { Status: 'in-progress' } }),
-      this.prisma.communication.count({ where: { Status: 'completed' } }),
-      this.prisma.communication.count({ where: { Status: 'overdue' } }),
+      this.prisma.communication.count({ where: active }),
+      this.prisma.communication.count({ where: { ...active, Type: 'incoming' } }),
+      this.prisma.communication.count({ where: { ...active, Type: 'outgoing' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'pending' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'in-progress' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'completed' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'overdue' } }),
     ]);
     return { total, incoming, outgoing, pending, inProgress, completed, overdue };
   }
@@ -386,8 +432,9 @@ export class CommsService {
     });
     if (!comm) throw new NotFoundException('Communication not found');
 
-    // Download images and convert to base64
-    const photos = [];
+    const formatted = this.formatComm(comm);
+
+    const images = [];
     for (const img of comm.Images) {
       let base64 = '';
       try {
@@ -397,17 +444,18 @@ export class CommsService {
       } catch {
         // File not found on FTP
       }
-      photos.push({
+      images.push({
         id: img.Id,
         imageFile: img.ImageFile,
         imageFileType: img.ImageFileType,
+        imageFileSize: img.ImageFileSize,
         base64,
       });
     }
 
     return {
-      communication: this.formatComm(comm),
-      photos,
+      ...formatted,
+      images,
     };
   }
 
@@ -441,10 +489,11 @@ export class CommsService {
       await this.prisma.commImage.createMany({ data: imageRecords });
     }
 
+    await this.audit.log({ entityType: 'Communication', entityId: commId, action: 'upload_images', userId, changes: { after: { added: imageRecords.length } } });
     return { added: imageRecords.length };
   }
 
-  async deleteImages(commId: number, imageIds: number[]) {
+  async deleteImages(commId: number, imageIds: number[], userId?: number) {
     const images = await this.prisma.commImage.findMany({
       where: { Id: { in: imageIds }, CommunicationId: commId },
     });
@@ -458,6 +507,7 @@ export class CommsService {
       where: { Id: { in: imageIds }, CommunicationId: commId },
     });
 
+    await this.audit.log({ entityType: 'Communication', entityId: commId, action: 'delete_images', userId, changes: { after: { deleted: images.length } } });
     return { deleted: images.length };
   }
 
@@ -604,7 +654,7 @@ export class CommsService {
       });
     }
 
-    return {
+    const result = {
       id: fullReply!.Id,
       actionId: fullReply!.ActionId,
       sender: {
@@ -616,6 +666,9 @@ export class CommsService {
       images,
       createdAt: fullReply!.CreatedAt.toISOString(),
     };
+
+    await this.audit.log({ entityType: 'CommActionReply', entityId: result.id, action: 'create', userId, changes: { after: { actionId, content: content?.trim() || null } } });
+    return result;
   }
 
   async deleteReply(replyId: number, userId: number) {
@@ -633,5 +686,6 @@ export class CommsService {
 
     // Delete from DB (cascades to images)
     await this.prisma.commActionReply.delete({ where: { Id: replyId } });
+    await this.audit.log({ entityType: 'CommActionReply', entityId: replyId, action: 'delete', userId });
   }
 }

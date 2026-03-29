@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Subject } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 const userSelect = {
   Id: true,
@@ -24,7 +25,10 @@ export class ChatService {
   private onlineUsers = new Map<number, Set<string>>();
   readonly userStatus$ = new Subject<{ userId: number; isOnline: boolean }>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // -- Online tracking --
 
@@ -185,6 +189,7 @@ export class ChatService {
       },
     });
 
+    await this.audit.log({ entityType: 'ChatConversation', entityId: conv.Id, action: 'create', userId, changes: { after: { participantId } } });
     return this.formatConversation(conv, 0);
   }
 
@@ -220,6 +225,7 @@ export class ChatService {
       },
     });
 
+    await this.audit.log({ entityType: 'ChatConversation', entityId: conv.Id, action: 'create_group', userId, changes: { after: { name, participantIds } } });
     return this.formatConversation(conv, 0);
   }
 
@@ -293,6 +299,7 @@ export class ChatService {
       recipientIds,
     });
 
+    await this.audit.log({ entityType: 'ChatMessage', entityId: message.Id, action: 'create', userId: senderId, changes: { after: { conversationId } } });
     return formatted;
   }
 

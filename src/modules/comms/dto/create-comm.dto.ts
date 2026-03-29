@@ -20,29 +20,15 @@ class ActionDto {
   @IsNotEmpty()
   actionRequired: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  dueDate: string;
+  dueDate?: string;
 
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AssigneeDto)
   assignees?: AssigneeDto[];
-}
-
-class RoutingDto {
-  @IsString()
-  @IsNotEmpty()
-  routedTo: string;
-
-  @IsOptional()
-  @IsString()
-  routedToRole?: string;
-
-  @IsOptional()
-  @IsString()
-  remarks?: string;
 }
 
 export class CreateCommDto {
@@ -72,10 +58,17 @@ export class CreateCommDto {
   @IsNotEmpty()
   recipient: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  dateReceived: string;
+  dateReceived?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateSent?: string;
+
+  // Validation: incoming requires dateReceived, outgoing requires dateSent — enforced in service
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -89,11 +82,4 @@ export class CreateCommDto {
   @ValidateNested({ each: true })
   @Type(() => ActionDto)
   actions?: ActionDto[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RoutingDto)
-  routings?: RoutingDto[];
 }

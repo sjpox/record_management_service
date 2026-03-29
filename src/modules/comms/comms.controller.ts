@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CommsService } from './comms.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
+import { ArchiveCommDto } from './dto/archive-comm.dto';
 
 @ApiTags('Communications')
 @ApiBearerAuth()
@@ -22,6 +23,9 @@ export class CommsController {
     @Query('status') status?: string,
     @Query('priority') priority?: string,
     @Query('search') search?: string,
+    @Query('isArchived') isArchived?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
   ) {
     return this.commsService.findAll({
       page: page ? parseInt(page) : 1,
@@ -30,6 +34,9 @@ export class CommsController {
       status,
       priority,
       search,
+      isArchived: isArchived === 'true',
+      sortBy,
+      sortOrder,
     });
   }
 
@@ -38,7 +45,7 @@ export class CommsController {
     return this.commsService.getStats();
   }
 
-  @Get(':id')
+@Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.commsService.findOne(id);
   }
@@ -61,8 +68,36 @@ export class CommsController {
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.commsService.remove(id);
+  remove(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.commsService.remove(id, user.Id);
+  }
+
+  @Post(':id/archive')
+  archive(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ArchiveCommDto,
+  ) {
+    return this.commsService.archive(id, user.Id, dto.shelfItemId);
+  }
+
+  @Put(':id/shelf')
+  updateShelf(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ArchiveCommDto,
+  ) {
+    return this.commsService.updateShelf(id, dto.shelfItemId);
+  }
+
+  @Post(':id/unarchive')
+  unarchive(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.commsService.unarchive(id, user.Id);
   }
 
   @Post('actions/:actionId/toggle')
@@ -71,11 +106,6 @@ export class CommsController {
     @Param('actionId', ParseIntPipe) actionId: number,
   ) {
     return this.commsService.toggleActionStatus(actionId, user.Id);
-  }
-
-  @Post('routings/:routingId/acknowledge')
-  acknowledgeRouting(@Param('routingId', ParseIntPipe) routingId: number) {
-    return this.commsService.acknowledgeRouting(routingId);
   }
 
   // ── Image Endpoints ────────────────────────────────────────────
@@ -97,10 +127,11 @@ export class CommsController {
 
   @Post(':id/photos/delete')
   deleteImages(
+    @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
     @Body('imageIds') imageIds: number[],
   ) {
-    return this.commsService.deleteImages(id, imageIds);
+    return this.commsService.deleteImages(id, imageIds, user.Id);
   }
 
   // ── Reply Thread Endpoints ────────────────────────────────────

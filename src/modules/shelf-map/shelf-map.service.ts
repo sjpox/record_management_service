@@ -29,6 +29,28 @@ const cabinetSelectFields = {
   Height: true,
   DateCreated: true,
   DateLastUpdated: true,
+  Shelves: {
+    select: {
+      Id: true,
+      Name: true,
+      Location: true,
+      CabinetId: true,
+      DateCreated: true,
+      DateLastUpdated: true,
+      Items: {
+        select: {
+          Id: true,
+          Label: true,
+          Description: true,
+          Category: true,
+          ShelfId: true,
+          DateCreated: true,
+          DateLastUpdated: true,
+        },
+      },
+      _count: { select: { Items: true } },
+    },
+  },
   _count: {
     select: { Shelves: true },
   },
