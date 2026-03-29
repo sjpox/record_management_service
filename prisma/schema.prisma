@@ -41,6 +41,9 @@ model Users {
   ChatParticipants         ChatParticipant[]  @relation("ChatParticipantUser")
   ChatMessagesSent         ChatMessage[]      @relation("ChatMessageSender")
 
+  // Relations for Notifications
+  Notifications            Notification[]
+
   // Relations for Index Documents
   IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
   IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
@@ -435,6 +438,25 @@ model ChatParticipant {
   @@index([ConversationId])
   @@index([UserId])
   @@map("chat_participants")
+}
+
+// Notifications
+model Notification {
+  Id          Int       @id @default(autoincrement()) @map("notification_id")
+  UserId      Int       @map("user_id")
+  Type        String    @db.VarChar(50) @map("type")
+  Title       String    @db.VarChar(255) @map("title")
+  Body        String    @db.Text @map("body")
+  EntityType  String?   @db.VarChar(50) @map("entity_type")
+  EntityId    Int?      @map("entity_id")
+  IsRead      Boolean   @default(false) @map("is_read")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+
+  User        Users     @relation(fields: [UserId], references: [Id], onDelete: Cascade)
+
+  @@index([UserId, IsRead])
+  @@index([CreatedAt])
+  @@map("notifications")
 }
 
 // Chat Messages

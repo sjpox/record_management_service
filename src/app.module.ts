@@ -14,6 +14,7 @@ import { ShelfMapModule } from './modules/shelf-map/shelf-map.module';
 import { LocationModule } from './modules/location/location.module';
 import { CommsModule } from './modules/comms/comms.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
@@ -31,6 +32,7 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     OtherDocumentModule,
     LocationModule,
     ShelfMapModule,
+    NotificationsModule,
     CommsModule,
     ChatModule,
   ],

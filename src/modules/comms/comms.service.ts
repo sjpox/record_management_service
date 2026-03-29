@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
 import sharp from 'sharp';
@@ -39,6 +40,7 @@ export class CommsService {
     private readonly prisma: PrismaService,
     private readonly ftpService: FtpService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private formatComm(comm: any) {
@@ -215,6 +217,12 @@ export class CommsService {
 
     const result = this.formatComm(comm);
     await this.audit.log({ entityType: 'Communication', entityId: comm.Id, action: 'create', userId, changes: { after: result } });
+
+    // Notify registered assignees
+    for (const action of comm.Actions) {
+      await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject);
+    }
+
     return result;
   }
 
@@ -268,12 +276,24 @@ export class CommsService {
                 await this.prisma.commActionAssignee.create({
                   data: { ActionId: a.id, UserId: assignee.userId || null, Name: assignee.name || null },
                 });
+                if (assignee.userId) {
+                  const comm = await this.prisma.communication.findUnique({ where: { Id: id }, select: { ReferenceNumber: true, Subject: true } });
+                  const action = await this.prisma.commAction.findUnique({ where: { Id: a.id }, select: { ActionRequired: true } });
+                  await this.notifications.notify({
+                    userId: assignee.userId,
+                    type: 'comm_action_assigned',
+                    title: 'You have been assigned an action item',
+                    body: `[${comm!.ReferenceNumber}] ${comm!.Subject}: ${action!.ActionRequired}`,
+                    entityType: 'CommAction',
+                    entityId: a.id,
+                  });
+                }
               }
             }
           }
         } else {
           // Create new action with assignees
-          await this.prisma.commAction.create({
+          const newAction = await this.prisma.commAction.create({
             data: {
               CommunicationId: id,
               ActionRequired: a.actionRequired,
@@ -287,7 +307,10 @@ export class CommsService {
                   }
                 : undefined,
             },
+            include: { Assignees: true },
           });
+          const comm = await this.prisma.communication.findUnique({ where: { Id: id }, select: { ReferenceNumber: true, Subject: true } });
+          await this.notifyAssignees(newAction, comm!.ReferenceNumber, comm!.Subject);
         }
       }
     }
@@ -328,6 +351,20 @@ export class CommsService {
 
     await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: isCompleting ? 'complete' : 'reopen', userId });
     return this.getDetails(action.CommunicationId);
+  }
+
+  private async notifyAssignees(action: any, referenceNumber: string, subject: string) {
+    for (const assignee of action.Assignees || []) {
+      if (!assignee.UserId) continue;
+      await this.notifications.notify({
+        userId: assignee.UserId,
+        type: 'comm_action_assigned',
+        title: 'You have been assigned an action item',
+        body: `[${referenceNumber}] ${subject}: ${action.ActionRequired}`,
+        entityType: 'CommAction',
+        entityId: action.Id,
+      });
+    }
   }
 
   private async recalcCommStatus(commId: number, toggledActionId?: number, isCompleting?: boolean) {

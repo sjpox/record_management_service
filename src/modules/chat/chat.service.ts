@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { Subject } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const userSelect = {
   Id: true,
@@ -28,6 +29,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // -- Online tracking --
@@ -298,6 +300,21 @@ export class ChatService {
       conversationId: conv.Id,
       recipientIds,
     });
+
+    // Notify each recipient
+    const sender = await this.prisma.users.findUnique({ where: { Id: senderId }, select: { FirstName: true, LastName: true } });
+    const senderName = sender ? `${sender.FirstName} ${sender.LastName}` : 'Someone';
+    const conversationName = conv.Name || senderName;
+    for (const recipientId of recipientIds) {
+      await this.notifications.notify({
+        userId: recipientId,
+        type: 'chat_message',
+        title: `New message from ${conversationName}`,
+        body: content.length > 100 ? content.slice(0, 97) + '...' : content,
+        entityType: 'ChatConversation',
+        entityId: conversationId,
+      });
+    }
 
     await this.audit.log({ entityType: 'ChatMessage', entityId: message.Id, action: 'create', userId: senderId, changes: { after: { conversationId } } });
     return formatted;

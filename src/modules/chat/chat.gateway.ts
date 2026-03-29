@@ -13,6 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { Subscription } from 'rxjs';
 import { ChatService } from './chat.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @WebSocketGateway({ namespace: '/chat', cors: { origin: '*' } })
 export class ChatGateway
@@ -28,6 +29,7 @@ export class ChatGateway
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   afterInit() {
@@ -42,6 +44,12 @@ export class ChatGateway
     this.subscriptions.push(
       this.chatService.userStatus$.subscribe((status) => {
         this.server.emit('userStatus', status);
+      }),
+    );
+
+    this.subscriptions.push(
+      this.notificationsService.notification$.subscribe(({ userId, notification }) => {
+        this.server.to(`user:${userId}`).emit('notification', notification);
       }),
     );
 
