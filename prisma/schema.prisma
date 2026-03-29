@@ -30,6 +30,7 @@ model Users {
 
   // Relations for Communications
   CommsCreated             Communication[]     @relation("CommCreatedBy")
+  CommsArchived            Communication[]     @relation("CommArchivedBy")
   CommImagesUploaded       CommImage[]          @relation("CommImageUploadedBy")
   CommActionsCompleted     CommAction[]         @relation("CommActionCompletedBy")
   CommActionAssignees      CommActionAssignee[] @relation("CommActionAssigneeUser")
@@ -244,6 +245,7 @@ model ShelfItem {
   Shelf           Shelf       @relation(fields: [ShelfId], references: [Id], onDelete: Cascade)
   IndexDocuments  IndexDocument[]
   OtherDocuments  OtherDocument[]
+  Communications  Communication[]
 
   @@index([ShelfId])
   @@index([Category])
@@ -301,8 +303,14 @@ model Communication {
   CreatedById     Int         @map("created_by")
   CreatedAt       DateTime    @default(now()) @db.DateTime @map("created_at")
   UpdatedAt       DateTime    @default(now()) @updatedAt @db.DateTime @map("updated_at")
+  IsArchived      Boolean     @default(false) @map("is_archived")
+  ArchivedAt      DateTime?   @db.DateTime @map("archived_at")
+  ArchivedById    Int?        @map("archived_by")
+  ShelfItemId     Int?        @map("shelf_item_id")
 
   CreatedBy       Users       @relation("CommCreatedBy", fields: [CreatedById], references: [Id])
+  ArchivedBy      Users?      @relation("CommArchivedBy", fields: [ArchivedById], references: [Id])
+  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   Images          CommImage[]
   Actions         CommAction[]
 

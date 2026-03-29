@@ -20,9 +20,9 @@ class ActionDto {
   @IsNotEmpty()
   actionRequired: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  dueDate: string;
+  dueDate?: string;
 
   @IsOptional()
   @IsArray()
@@ -58,15 +58,17 @@ export class CreateCommDto {
   @IsNotEmpty()
   recipient: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  dateReceived: string;
+  dateReceived?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   dateSent?: string;
+
+  // Validation: incoming requires dateReceived, outgoing requires dateSent — enforced in service
 
   @ApiPropertyOptional()
   @IsOptional()

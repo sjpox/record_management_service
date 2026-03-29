@@ -10,6 +10,16 @@ const userSelect = { Id: true, FirstName: true, LastName: true };
 
 const commInclude = {
   CreatedBy: { select: userSelect },
+  ArchivedBy: { select: userSelect },
+  ShelfItem: {
+    include: {
+      Shelf: {
+        include: {
+          Cabinet: { select: { Id: true, Name: true } },
+        },
+      },
+    },
+  },
   Images: true,
   Actions: {
     include: {
@@ -76,6 +86,22 @@ export class CommsService {
         : null,
       createdAt: comm.CreatedAt.toISOString(),
       updatedAt: comm.UpdatedAt.toISOString(),
+      isArchived: comm.IsArchived,
+      archivedAt: comm.ArchivedAt?.toISOString() || null,
+      archivedBy: comm.ArchivedBy
+        ? { id: comm.ArchivedBy.Id, firstName: comm.ArchivedBy.FirstName, lastName: comm.ArchivedBy.LastName }
+        : null,
+      shelfItem: comm.ShelfItem
+        ? {
+            id: comm.ShelfItem.Id,
+            label: comm.ShelfItem.Label,
+            shelf: {
+              id: comm.ShelfItem.Shelf.Id,
+              name: comm.ShelfItem.Shelf.Name,
+              cabinet: comm.ShelfItem.Shelf.Cabinet,
+            },
+          }
+        : null,
     };
   }
 
@@ -86,9 +112,12 @@ export class CommsService {
     status?: string;
     priority?: string;
     search?: string;
+    isArchived?: boolean;
+    sortBy?: string;
+    sortOrder?: string;
   }) {
-    const { page = 1, limit = 10, type, status, priority, search } = params;
-    const where: any = {};
+    const { page = 1, limit = 10, type, status, priority, search, isArchived = false, sortBy, sortOrder } = params;
+    const where: any = { IsArchived: isArchived };
 
     if (type && type !== 'all') where.Type = type;
     if (status && status !== 'all') where.Status = status;
@@ -102,11 +131,21 @@ export class CommsService {
       ];
     }
 
+    const sortFieldMap: Record<string, string> = {
+      archivedAt: 'ArchivedAt',
+      createdAt: 'CreatedAt',
+      updatedAt: 'UpdatedAt',
+      dateReceived: 'DateReceived',
+      dateSent: 'DateSent',
+    };
+    const orderByField = (sortBy && sortFieldMap[sortBy]) || 'CreatedAt';
+    const orderByDir = sortOrder === 'asc' ? 'asc' : 'desc';
+
     const [data, total] = await Promise.all([
       this.prisma.communication.findMany({
         where,
         include: commInclude,
-        orderBy: { CreatedAt: 'desc' },
+        orderBy: { [orderByField]: orderByDir },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -127,6 +166,13 @@ export class CommsService {
   }
 
   async create(dto: CreateCommDto, userId: number) {
+    if (dto.type === 'incoming' && !dto.dateReceived) {
+      throw new BadRequestException('dateReceived is required for incoming communications');
+    }
+    if (dto.type === 'outgoing' && !dto.dateSent) {
+      throw new BadRequestException('dateSent is required for outgoing communications');
+    }
+
     const prefix = dto.type === 'incoming' ? 'IN' : 'OUT';
     const year = new Date().getFullYear();
     const count = await this.prisma.communication.count({
@@ -143,7 +189,7 @@ export class CommsService {
         Description: dto.description || null,
         Sender: dto.sender,
         Recipient: dto.recipient,
-        DateReceived: new Date(dto.dateReceived),
+        DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
         DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
         Priority: dto.priority || 'normal',
         CreatedById: userId,
@@ -151,7 +197,7 @@ export class CommsService {
           ? {
               create: dto.actions.map((a) => ({
                 ActionRequired: a.actionRequired,
-                DueDate: new Date(a.dueDate),
+                DueDate: a.dueDate ? new Date(a.dueDate) : null,
                 Assignees: a.assignees?.length
                   ? {
                       create: a.assignees.map((assignee) => ({
@@ -319,15 +365,60 @@ export class CommsService {
     });
   }
 
+  async archive(id: number, userId: number, shelfItemId?: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: {
+        IsArchived: true,
+        ArchivedAt: new Date(),
+        ArchivedById: userId,
+        ShelfItemId: shelfItemId ?? null,
+      },
+    });
+
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'archive', userId, changes: { after: { shelfItemId } } });
+    return this.getDetails(id);
+  }
+
+async updateShelf(id: number, shelfItemId?: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: { ShelfItemId: shelfItemId ?? null },
+    });
+
+    return this.getDetails(id);
+  }
+
+  async unarchive(id: number, userId: number) {
+    const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
+    if (!existing) throw new NotFoundException('Communication not found');
+    if (!existing.IsArchived) throw new BadRequestException('Communication is not archived');
+
+    await this.prisma.communication.update({
+      where: { Id: id },
+      data: { IsArchived: false, ArchivedAt: null, ArchivedById: null, ShelfItemId: null },
+    });
+
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'unarchive', userId });
+    return this.getDetails(id);
+  }
+
   async getStats() {
+    const active = { IsArchived: false };
     const [total, incoming, outgoing, pending, inProgress, completed, overdue] = await Promise.all([
-      this.prisma.communication.count(),
-      this.prisma.communication.count({ where: { Type: 'incoming' } }),
-      this.prisma.communication.count({ where: { Type: 'outgoing' } }),
-      this.prisma.communication.count({ where: { Status: 'pending' } }),
-      this.prisma.communication.count({ where: { Status: 'in-progress' } }),
-      this.prisma.communication.count({ where: { Status: 'completed' } }),
-      this.prisma.communication.count({ where: { Status: 'overdue' } }),
+      this.prisma.communication.count({ where: active }),
+      this.prisma.communication.count({ where: { ...active, Type: 'incoming' } }),
+      this.prisma.communication.count({ where: { ...active, Type: 'outgoing' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'pending' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'in-progress' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'completed' } }),
+      this.prisma.communication.count({ where: { ...active, Status: 'overdue' } }),
     ]);
     return { total, incoming, outgoing, pending, inProgress, completed, overdue };
   }
