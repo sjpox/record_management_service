@@ -31,20 +31,6 @@ class ActionDto {
   assignees?: AssigneeDto[];
 }
 
-class RoutingDto {
-  @IsString()
-  @IsNotEmpty()
-  routedTo: string;
-
-  @IsOptional()
-  @IsString()
-  routedToRole?: string;
-
-  @IsOptional()
-  @IsString()
-  remarks?: string;
-}
-
 export class CreateCommDto {
   @ApiProperty()
   @IsString()
@@ -80,6 +66,11 @@ export class CreateCommDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  dateSent?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   @IsIn(['low', 'normal', 'urgent'])
   priority?: string;
 
@@ -89,11 +80,4 @@ export class CreateCommDto {
   @ValidateNested({ each: true })
   @Type(() => ActionDto)
   actions?: ActionDto[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RoutingDto)
-  routings?: RoutingDto[];
 }

@@ -32,35 +32,15 @@ class ActionDto {
   @IsNotEmpty()
   actionRequired: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  dueDate: string;
+  dueDate?: string;
 
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AssigneeDto)
   assignees?: AssigneeDto[];
-}
-
-class RoutingDto {
-  @ApiPropertyOptional({ description: 'Existing routing ID (omit for new)' })
-  @IsOptional()
-  @IsInt()
-  @Type(() => Number)
-  id?: number;
-
-  @IsString()
-  @IsNotEmpty()
-  routedTo: string;
-
-  @IsOptional()
-  @IsString()
-  routedToRole?: string;
-
-  @IsOptional()
-  @IsString()
-  remarks?: string;
 }
 
 export class UpdateCommDto {
@@ -99,6 +79,11 @@ export class UpdateCommDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  dateSent?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   @IsIn(['low', 'normal', 'urgent'])
   priority?: string;
 
@@ -115,10 +100,4 @@ export class UpdateCommDto {
   @Type(() => ActionDto)
   actions?: ActionDto[];
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RoutingDto)
-  routings?: RoutingDto[];
 }

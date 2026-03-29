@@ -61,8 +61,11 @@ export class CommsController {
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.commsService.remove(id);
+  remove(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.commsService.remove(id, user.Id);
   }
 
   @Post('actions/:actionId/toggle')
@@ -71,11 +74,6 @@ export class CommsController {
     @Param('actionId', ParseIntPipe) actionId: number,
   ) {
     return this.commsService.toggleActionStatus(actionId, user.Id);
-  }
-
-  @Post('routings/:routingId/acknowledge')
-  acknowledgeRouting(@Param('routingId', ParseIntPipe) routingId: number) {
-    return this.commsService.acknowledgeRouting(routingId);
   }
 
   // ── Image Endpoints ────────────────────────────────────────────
@@ -97,10 +95,11 @@ export class CommsController {
 
   @Post(':id/photos/delete')
   deleteImages(
+    @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
     @Body('imageIds') imageIds: number[],
   ) {
-    return this.commsService.deleteImages(id, imageIds);
+    return this.commsService.deleteImages(id, imageIds, user.Id);
   }
 
   // ── Reply Thread Endpoints ────────────────────────────────────
