@@ -28,6 +28,29 @@ model Users {
   DocumentImagesAdded  DocumentImages[] @relation("DocumentImageAddedBy")
   AuditLogs            AuditLog[]
 
+  // Relations for Communications
+  CommsCreated             Communication[]     @relation("CommCreatedBy")
+  CommsArchived            Communication[]     @relation("CommArchivedBy")
+  CommImagesUploaded       CommImage[]          @relation("CommImageUploadedBy")
+  CommActionsCompleted     CommAction[]         @relation("CommActionCompletedBy")
+  CommActionAssignees      CommActionAssignee[] @relation("CommActionAssigneeUser")
+  CommActionReplies        CommActionReply[]    @relation("CommActionReplySender")
+  CommReplyImages          CommActionReplyImage[] @relation("CommReplyImageUploader")
+
+  // Relations for Chat
+  ChatParticipants         ChatParticipant[]  @relation("ChatParticipantUser")
+  ChatMessagesSent         ChatMessage[]      @relation("ChatMessageSender")
+
+  // Relations for Notifications
+  Notifications            Notification[]
+
+  // Relations for Recipient Groups
+  RecipientGroupsCreated   RecipientGroup[]        @relation("RecipientGroupCreatedBy")
+  RecipientGroupMemberships RecipientGroupMember[] @relation("RecipientGroupMemberUser")
+
+  // Relations for Announcements
+  AnnouncementsCreated     Announcement[]          @relation("AnnouncementCreatedBy")
+
   // Relations for Index Documents
   IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
   IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
@@ -232,6 +255,7 @@ model ShelfItem {
   Shelf           Shelf       @relation(fields: [ShelfId], references: [Id], onDelete: Cascade)
   IndexDocuments  IndexDocument[]
   OtherDocuments  OtherDocument[]
+  Communications  Communication[]
 
   @@index([ShelfId])
   @@index([Category])
@@ -271,5 +295,249 @@ model OtherDocument {
   @@index([DateArchived])
   @@index([ShelfItemId])
   @@map("general_document")
+}
+
+// Communications Logging
+model Communication {
+  Id              Int         @id @default(autoincrement()) @map("comm_id")
+  Type            String      @db.VarChar(20) @map("type")
+  ReferenceNumber String      @db.VarChar(50) @map("reference_number")
+  Subject         String      @db.VarChar(500) @map("subject")
+  Description     String?     @db.Text @map("description")
+  Sender          String      @db.VarChar(255) @map("sender")
+  Recipient       String      @db.VarChar(255) @map("recipient")
+  DateReceived    DateTime    @db.DateTime @map("date_received")
+  DateSent        DateTime?   @db.DateTime @map("date_sent")
+  Status          String      @default("pending") @db.VarChar(20) @map("status")
+  Priority        String      @default("normal") @db.VarChar(20) @map("priority")
+  CreatedById     Int         @map("created_by")
+  CreatedAt       DateTime    @default(now()) @db.DateTime @map("created_at")
+  UpdatedAt       DateTime    @default(now()) @updatedAt @db.DateTime @map("updated_at")
+  IsArchived      Boolean     @default(false) @map("is_archived")
+  ArchivedAt      DateTime?   @db.DateTime @map("archived_at")
+  ArchivedById    Int?        @map("archived_by")
+  ShelfItemId     Int?        @map("shelf_item_id")
+
+  CreatedBy       Users       @relation("CommCreatedBy", fields: [CreatedById], references: [Id])
+  ArchivedBy      Users?      @relation("CommArchivedBy", fields: [ArchivedById], references: [Id])
+  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
+  Images          CommImage[]
+  Actions         CommAction[]
+
+  @@index([Type])
+  @@index([Status])
+  @@index([CreatedById])
+  @@index([DateReceived])
+  @@map("communications")
+}
+
+model CommImage {
+  Id              Int     @id @default(autoincrement()) @map("image_id")
+  CommunicationId Int    @map("comm_id")
+  ImageFile       String @db.VarChar(500) @map("image_file")
+  ImageFileType   String? @db.VarChar(50) @map("image_file_type")
+  ImageFileSize   Int?   @map("image_file_size")
+  UploadedById    Int?   @map("uploaded_by")
+
+  Communication   Communication @relation(fields: [CommunicationId], references: [Id], onDelete: Cascade)
+  UploadedBy      Users?        @relation("CommImageUploadedBy", fields: [UploadedById], references: [Id])
+
+  @@index([CommunicationId])
+  @@map("comm_images")
+}
+
+model CommAction {
+  Id              Int         @id @default(autoincrement()) @map("action_id")
+  CommunicationId Int         @map("comm_id")
+  ActionRequired  String      @db.Text @map("action_required")
+  DueDate         DateTime?   @db.DateTime @map("due_date")
+  Status          String      @default("pending") @db.VarChar(20) @map("status")
+  CompletedAt     DateTime?   @db.DateTime @map("completed_at")
+  CompletedById   Int?        @map("completed_by")
+  Notes           String?     @db.Text @map("notes")
+  CreatedAt       DateTime    @default(now()) @db.DateTime @map("created_at")
+
+  Communication   Communication          @relation(fields: [CommunicationId], references: [Id], onDelete: Cascade)
+  CompletedBy     Users?                 @relation("CommActionCompletedBy", fields: [CompletedById], references: [Id])
+  Assignees       CommActionAssignee[]
+  Replies         CommActionReply[]
+
+  @@index([CommunicationId])
+  @@index([Status])
+  @@map("comm_actions")
+}
+
+model CommActionAssignee {
+  Id        Int     @id @default(autoincrement()) @map("assignee_id")
+  ActionId  Int     @map("action_id")
+  UserId    Int?    @map("user_id")
+  Name      String? @db.VarChar(255) @map("name")
+
+  Action    CommAction @relation(fields: [ActionId], references: [Id], onDelete: Cascade)
+  User      Users?     @relation("CommActionAssigneeUser", fields: [UserId], references: [Id])
+
+  @@index([ActionId])
+  @@index([UserId])
+  @@index([Name])
+  @@map("comm_action_assignees")
+}
+
+// Action Item Reply Thread
+model CommActionReply {
+  Id        Int       @id @default(autoincrement()) @map("reply_id")
+  ActionId  Int       @map("action_id")
+  SenderId  Int       @map("sender_id")
+  Content   String?   @db.Text @map("content")
+  CreatedAt DateTime  @default(now()) @db.DateTime @map("created_at")
+
+  Action    CommAction @relation(fields: [ActionId], references: [Id], onDelete: Cascade)
+  Sender    Users      @relation("CommActionReplySender", fields: [SenderId], references: [Id])
+  Images    CommActionReplyImage[]
+
+  @@index([ActionId, CreatedAt])
+  @@index([SenderId])
+  @@map("comm_action_replies")
+}
+
+// Reply Image (stored on FTP)
+model CommActionReplyImage {
+  Id            Int     @id @default(autoincrement()) @map("image_id")
+  ReplyId       Int     @map("reply_id")
+  ImageFile     String  @db.VarChar(500) @map("image_file")
+  ImageFileType String? @db.VarChar(50) @map("image_file_type")
+  ImageFileSize Int?    @map("image_file_size")
+  UploadedById  Int?    @map("uploaded_by")
+
+  Reply         CommActionReply @relation(fields: [ReplyId], references: [Id], onDelete: Cascade)
+  UploadedBy    Users?          @relation("CommReplyImageUploader", fields: [UploadedById], references: [Id])
+
+  @@index([ReplyId])
+  @@map("comm_action_reply_images")
+}
+
+// Chat Conversations (supports 1-to-1 and group chats)
+model ChatConversation {
+  Id        Int       @id @default(autoincrement()) @map("conversation_id")
+  Name      String?   @db.VarChar(255) @map("name")
+  IsGroup   Boolean   @default(false) @map("is_group")
+  CreatedById Int?    @map("created_by")
+  CreatedAt DateTime  @default(now()) @db.DateTime @map("created_at")
+  UpdatedAt DateTime  @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  Participants ChatParticipant[]
+  Messages     ChatMessage[]
+
+  @@index([UpdatedAt])
+  @@map("chat_conversations")
+}
+
+// Chat Participants (join table for conversation members)
+model ChatParticipant {
+  Id              Int       @id @default(autoincrement()) @map("participant_id")
+  ConversationId  Int       @map("conversation_id")
+  UserId          Int       @map("user_id")
+  JoinedAt        DateTime  @default(now()) @db.DateTime @map("joined_at")
+
+  Conversation    ChatConversation @relation(fields: [ConversationId], references: [Id], onDelete: Cascade)
+  User            Users            @relation("ChatParticipantUser", fields: [UserId], references: [Id])
+
+  @@unique([ConversationId, UserId])
+  @@index([ConversationId])
+  @@index([UserId])
+  @@map("chat_participants")
+}
+
+// Notifications
+model Notification {
+  Id          Int       @id @default(autoincrement()) @map("notification_id")
+  UserId      Int       @map("user_id")
+  Type        String    @db.VarChar(50) @map("type")
+  Title       String    @db.VarChar(255) @map("title")
+  Body        String    @db.Text @map("body")
+  EntityType  String?   @db.VarChar(50) @map("entity_type")
+  EntityId    Int?      @map("entity_id")
+  IsRead      Boolean   @default(false) @map("is_read")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+
+  User        Users     @relation(fields: [UserId], references: [Id], onDelete: Cascade)
+
+  @@index([UserId, IsRead])
+  @@index([CreatedAt])
+  @@map("notifications")
+}
+
+// Chat Messages
+model ChatMessage {
+  Id              Int       @id @default(autoincrement()) @map("message_id")
+  ConversationId  Int       @map("conversation_id")
+  SenderId        Int       @map("sender_id")
+  Content         String    @db.Text @map("content")
+  CreatedAt       DateTime  @default(now()) @db.DateTime @map("created_at")
+  ReadAt          DateTime? @db.DateTime @map("read_at")
+
+  Conversation    ChatConversation @relation(fields: [ConversationId], references: [Id], onDelete: Cascade)
+  Sender          Users            @relation("ChatMessageSender", fields: [SenderId], references: [Id])
+
+  @@index([ConversationId, CreatedAt])
+  @@index([SenderId])
+  @@map("chat_messages")
+}
+
+// Recipient Groups (versioned — updates create new records)
+model RecipientGroup {
+  Id          Int       @id @default(autoincrement()) @map("group_id")
+  Name        String    @db.VarChar(255) @map("name")
+  Status      String    @default("active") @db.VarChar(20) @map("status")
+  Version     Int       @default(1) @map("version")
+  GroupKey    String    @db.VarChar(100) @map("group_key")
+  CreatedById Int       @map("created_by")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+
+  CreatedBy   Users     @relation("RecipientGroupCreatedBy", fields: [CreatedById], references: [Id])
+  Members     RecipientGroupMember[]
+
+  @@index([GroupKey, Status])
+  @@index([Status])
+  @@index([CreatedById])
+  @@map("recipient_groups")
+}
+
+// Recipient Group Members (join table)
+model RecipientGroupMember {
+  Id        Int     @id @default(autoincrement()) @map("member_id")
+  GroupId   Int     @map("group_id")
+  UserId    Int     @map("user_id")
+
+  Group     RecipientGroup @relation(fields: [GroupId], references: [Id], onDelete: Cascade)
+  User      Users          @relation("RecipientGroupMemberUser", fields: [UserId], references: [Id])
+
+  @@unique([GroupId, UserId])
+  @@index([GroupId])
+  @@index([UserId])
+  @@map("recipient_group_members")
+}
+
+// Announcements
+model Announcement {
+  Id          Int       @id @default(autoincrement()) @map("announcement_id")
+  Title       String    @db.VarChar(255) @map("title")
+  Content     String    @db.Text @map("content")
+  Category    String    @default("general") @db.VarChar(50) @map("category")
+  Priority    String    @default("normal") @db.VarChar(20) @map("priority")
+  Status        String    @default("draft") @db.VarChar(20) @map("status")
+  IsDismissible Boolean   @default(true) @map("is_dismissible")
+  StartDate     DateTime? @db.DateTime @map("start_date")
+  EndDate     DateTime? @db.DateTime @map("end_date")
+  CreatedById Int       @map("created_by")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+  UpdatedAt   DateTime  @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  CreatedBy   Users     @relation("AnnouncementCreatedBy", fields: [CreatedById], references: [Id])
+
+  @@index([Status])
+  @@index([Category])
+  @@index([CreatedById])
+  @@index([StartDate, EndDate])
+  @@map("announcements")
 }
 

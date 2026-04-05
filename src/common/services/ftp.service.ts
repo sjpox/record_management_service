@@ -103,6 +103,35 @@ export class FtpService {
     return path.posix.join(this.baseUploadDir, 'other-documents', sanitizedTitle);
   }
 
+  buildCommImagePath(refNumber: string): string {
+    const sanitizedRef = refNumber.replace(/[^a-zA-Z0-9-_]/g, '_').trim();
+    return path.posix.join(this.baseUploadDir, 'communications', sanitizedRef);
+  }
+
+  async uploadCommFiles(
+    files: Express.Multer.File[],
+    refNumber: string,
+  ): Promise<UploadResult[]> {
+    if (files.length === 0) return [];
+    const remotePath = this.buildCommImagePath(refNumber);
+    return this.uploadFilesToPath(files, remotePath);
+  }
+
+  buildCommReplyPath(refNumber: string, actionId: number): string {
+    const sanitizedRef = refNumber.replace(/[^a-zA-Z0-9-_]/g, '_').trim();
+    return path.posix.join(this.baseUploadDir, 'communications', sanitizedRef, `action-${actionId}`);
+  }
+
+  async uploadCommReplyFiles(
+    files: Express.Multer.File[],
+    refNumber: string,
+    actionId: number,
+  ): Promise<UploadResult[]> {
+    if (files.length === 0) return [];
+    const remotePath = this.buildCommReplyPath(refNumber, actionId);
+    return this.uploadFilesToPath(files, remotePath);
+  }
+
   async uploadOtherDocumentFiles(
     files: Express.Multer.File[],
     title: string,
