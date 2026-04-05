@@ -107,6 +107,24 @@ export class CommsService {
     };
   }
 
+  private async buildVisibilityFilter(userId: number, userRole?: string): Promise<any | null> {
+    if (userRole === 'admin') return null; // no filter — admin sees all
+
+    const user = await this.prisma.users.findUnique({
+      where: { Id: userId },
+      select: { FirstName: true, LastName: true },
+    });
+    const fullName = user ? `${user.FirstName} ${user.LastName}` : '';
+
+    return {
+      OR: [
+        { CreatedById: userId },
+        ...(fullName ? [{ Recipient: { contains: fullName } }] : []),
+        { Actions: { some: { Assignees: { some: { UserId: userId } } } } },
+      ],
+    };
+  }
+
   async findAll(params: {
     page?: number;
     limit?: number;
@@ -117,20 +135,33 @@ export class CommsService {
     isArchived?: boolean;
     sortBy?: string;
     sortOrder?: string;
+    userId?: number;
+    userRole?: string;
   }) {
-    const { page = 1, limit = 10, type, status, priority, search, isArchived = false, sortBy, sortOrder } = params;
+    const { page = 1, limit = 10, type, status, priority, search, isArchived = false, sortBy, sortOrder, userId, userRole } = params;
     const where: any = { IsArchived: isArchived };
+
+    // Visibility: non-admins only see comms they created, are a recipient of, or are assigned to
+    if (userId) {
+      const visFilter = await this.buildVisibilityFilter(userId, userRole);
+      if (visFilter) {
+        where.AND = [visFilter];
+      }
+    }
 
     if (type && type !== 'all') where.Type = type;
     if (status && status !== 'all') where.Status = status;
     if (priority && priority !== 'all') where.Priority = priority;
     if (search) {
-      where.OR = [
-        { Subject: { contains: search } },
-        { ReferenceNumber: { contains: search } },
-        { Sender: { contains: search } },
-        { Recipient: { contains: search } },
-      ];
+      const searchFilter = {
+        OR: [
+          { Subject: { contains: search } },
+          { ReferenceNumber: { contains: search } },
+          { Sender: { contains: search } },
+          { Recipient: { contains: search } },
+        ],
+      };
+      where.AND = [...(where.AND || []), searchFilter];
     }
 
     const sortFieldMap: Record<string, string> = {
@@ -221,6 +252,11 @@ export class CommsService {
     // Notify registered assignees
     for (const action of comm.Actions) {
       await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject);
+    }
+
+    // Notify recipient users
+    if (dto.recipientUserIds?.length) {
+      await this.notifyRecipients(dto.recipientUserIds, comm.ReferenceNumber, comm.Subject, userId);
     }
 
     return result;
@@ -323,6 +359,38 @@ export class CommsService {
 
     const result = this.formatComm(comm);
     await this.audit.log({ entityType: 'Communication', entityId: id, action: 'update', userId, changes: { after: result } });
+
+    // Notify all recipients and assignees about the update
+    if (userId) {
+      const notifyUserIds = new Set<number>();
+
+      // Add recipient user IDs
+      if (dto.recipientUserIds?.length) {
+        for (const uid of dto.recipientUserIds) notifyUserIds.add(uid);
+      }
+
+      // Add all current assignee user IDs
+      for (const action of comm.Actions) {
+        for (const assignee of action.Assignees) {
+          if (assignee.UserId) notifyUserIds.add(assignee.UserId);
+        }
+      }
+
+      // Remove the user who made the update
+      notifyUserIds.delete(userId);
+
+      for (const uid of notifyUserIds) {
+        await this.notifications.notify({
+          userId: uid,
+          type: 'comm_updated',
+          title: 'A communication has been updated',
+          body: `[${comm.ReferenceNumber}] ${comm.Subject}`,
+          entityType: 'Communication',
+          entityId: comm.Id,
+        });
+      }
+    }
+
     return result;
   }
 
@@ -351,6 +419,19 @@ export class CommsService {
 
     await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: isCompleting ? 'complete' : 'reopen', userId });
     return this.getDetails(action.CommunicationId);
+  }
+
+  private async notifyRecipients(userIds: number[], referenceNumber: string, subject: string, senderUserId: number) {
+    for (const uid of userIds) {
+      if (uid === senderUserId) continue; // Don't notify the sender
+      await this.notifications.notify({
+        userId: uid,
+        type: 'comm_recipient',
+        title: 'You are a recipient of a communication',
+        body: `[${referenceNumber}] ${subject}`,
+        entityType: 'Communication',
+      });
+    }
   }
 
   private async notifyAssignees(action: any, referenceNumber: string, subject: string) {
@@ -446,16 +527,24 @@ async updateShelf(id: number, shelfItemId?: number) {
     return this.getDetails(id);
   }
 
-  async getStats() {
-    const active = { IsArchived: false };
+  async getStats(userId?: number, userRole?: string) {
+    const base: any = { IsArchived: false };
+
+    if (userId) {
+      const visFilter = await this.buildVisibilityFilter(userId, userRole);
+      if (visFilter) {
+        base.AND = [visFilter];
+      }
+    }
+
     const [total, incoming, outgoing, pending, inProgress, completed, overdue] = await Promise.all([
-      this.prisma.communication.count({ where: active }),
-      this.prisma.communication.count({ where: { ...active, Type: 'incoming' } }),
-      this.prisma.communication.count({ where: { ...active, Type: 'outgoing' } }),
-      this.prisma.communication.count({ where: { ...active, Status: 'pending' } }),
-      this.prisma.communication.count({ where: { ...active, Status: 'in-progress' } }),
-      this.prisma.communication.count({ where: { ...active, Status: 'completed' } }),
-      this.prisma.communication.count({ where: { ...active, Status: 'overdue' } }),
+      this.prisma.communication.count({ where: base }),
+      this.prisma.communication.count({ where: { ...base, Type: 'incoming' } }),
+      this.prisma.communication.count({ where: { ...base, Type: 'outgoing' } }),
+      this.prisma.communication.count({ where: { ...base, Status: 'pending' } }),
+      this.prisma.communication.count({ where: { ...base, Status: 'in-progress' } }),
+      this.prisma.communication.count({ where: { ...base, Status: 'completed' } }),
+      this.prisma.communication.count({ where: { ...base, Status: 'overdue' } }),
     ]);
     return { total, incoming, outgoing, pending, inProgress, completed, overdue };
   }

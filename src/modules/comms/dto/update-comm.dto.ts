@@ -93,6 +93,13 @@ export class UpdateCommDto {
   @IsIn(['pending', 'in-progress', 'completed', 'overdue'])
   status?: string;
 
+  @ApiPropertyOptional({ description: 'User IDs of recipients for notifications' })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Type(() => Number)
+  recipientUserIds?: number[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()

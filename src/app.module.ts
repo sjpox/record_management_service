@@ -15,6 +15,8 @@ import { LocationModule } from './modules/location/location.module';
 import { CommsModule } from './modules/comms/comms.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RecipientGroupsModule } from './modules/recipient-groups/recipient-groups.module';
+import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
@@ -35,6 +37,8 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     NotificationsModule,
     CommsModule,
     ChatModule,
+    RecipientGroupsModule,
+    AnnouncementsModule,
   ],
 })
 export class AppModule implements NestModule {

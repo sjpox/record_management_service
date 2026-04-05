@@ -17,6 +17,7 @@ export class CommsController {
 
   @Get()
   findAll(
+    @CurrentUser() user: { Id: number; Role?: string },
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('type') type?: string,
@@ -37,12 +38,14 @@ export class CommsController {
       isArchived: isArchived === 'true',
       sortBy,
       sortOrder,
+      userId: user.Id,
+      userRole: user.Role,
     });
   }
 
   @Get('stats')
-  getStats() {
-    return this.commsService.getStats();
+  getStats(@CurrentUser() user: { Id: number; Role?: string }) {
+    return this.commsService.getStats(user.Id, user.Role);
   }
 
 @Get(':id')

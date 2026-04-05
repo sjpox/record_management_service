@@ -76,6 +76,13 @@ export class CreateCommDto {
   @IsIn(['low', 'normal', 'urgent'])
   priority?: string;
 
+  @ApiPropertyOptional({ description: 'User IDs of recipients (individuals and group members) for notifications' })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Type(() => Number)
+  recipientUserIds?: number[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()

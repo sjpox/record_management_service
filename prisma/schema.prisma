@@ -44,6 +44,13 @@ model Users {
   // Relations for Notifications
   Notifications            Notification[]
 
+  // Relations for Recipient Groups
+  RecipientGroupsCreated   RecipientGroup[]        @relation("RecipientGroupCreatedBy")
+  RecipientGroupMemberships RecipientGroupMember[] @relation("RecipientGroupMemberUser")
+
+  // Relations for Announcements
+  AnnouncementsCreated     Announcement[]          @relation("AnnouncementCreatedBy")
+
   // Relations for Index Documents
   IndexDocumentsAdded    IndexDocument[] @relation("IndexDocumentAddedBy")
   IndexDocumentsModified IndexDocument[] @relation("IndexDocumentModifiedBy")
@@ -474,5 +481,63 @@ model ChatMessage {
   @@index([ConversationId, CreatedAt])
   @@index([SenderId])
   @@map("chat_messages")
+}
+
+// Recipient Groups (versioned — updates create new records)
+model RecipientGroup {
+  Id          Int       @id @default(autoincrement()) @map("group_id")
+  Name        String    @db.VarChar(255) @map("name")
+  Status      String    @default("active") @db.VarChar(20) @map("status")
+  Version     Int       @default(1) @map("version")
+  GroupKey    String    @db.VarChar(100) @map("group_key")
+  CreatedById Int       @map("created_by")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+
+  CreatedBy   Users     @relation("RecipientGroupCreatedBy", fields: [CreatedById], references: [Id])
+  Members     RecipientGroupMember[]
+
+  @@index([GroupKey, Status])
+  @@index([Status])
+  @@index([CreatedById])
+  @@map("recipient_groups")
+}
+
+// Recipient Group Members (join table)
+model RecipientGroupMember {
+  Id        Int     @id @default(autoincrement()) @map("member_id")
+  GroupId   Int     @map("group_id")
+  UserId    Int     @map("user_id")
+
+  Group     RecipientGroup @relation(fields: [GroupId], references: [Id], onDelete: Cascade)
+  User      Users          @relation("RecipientGroupMemberUser", fields: [UserId], references: [Id])
+
+  @@unique([GroupId, UserId])
+  @@index([GroupId])
+  @@index([UserId])
+  @@map("recipient_group_members")
+}
+
+// Announcements
+model Announcement {
+  Id          Int       @id @default(autoincrement()) @map("announcement_id")
+  Title       String    @db.VarChar(255) @map("title")
+  Content     String    @db.Text @map("content")
+  Category    String    @default("general") @db.VarChar(50) @map("category")
+  Priority    String    @default("normal") @db.VarChar(20) @map("priority")
+  Status        String    @default("draft") @db.VarChar(20) @map("status")
+  IsDismissible Boolean   @default(true) @map("is_dismissible")
+  StartDate     DateTime? @db.DateTime @map("start_date")
+  EndDate     DateTime? @db.DateTime @map("end_date")
+  CreatedById Int       @map("created_by")
+  CreatedAt   DateTime  @default(now()) @db.DateTime @map("created_at")
+  UpdatedAt   DateTime  @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  CreatedBy   Users     @relation("AnnouncementCreatedBy", fields: [CreatedById], references: [Id])
+
+  @@index([Status])
+  @@index([Category])
+  @@index([CreatedById])
+  @@index([StartDate, EndDate])
+  @@map("announcements")
 }
 
