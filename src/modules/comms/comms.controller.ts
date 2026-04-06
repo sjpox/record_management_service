@@ -89,10 +89,11 @@ export class CommsController {
 
   @Put(':id/shelf')
   updateShelf(
+    @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ArchiveCommDto,
   ) {
-    return this.commsService.updateShelf(id, dto.shelfItemId);
+    return this.commsService.updateShelf(id, dto.shelfItemId, user.Id);
   }
 
   @Post(':id/unarchive')

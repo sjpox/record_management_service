@@ -501,7 +501,7 @@ export class CommsService {
     return this.getDetails(id);
   }
 
-async updateShelf(id: number, shelfItemId?: number) {
+async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
     if (!existing) throw new NotFoundException('Communication not found');
 
@@ -510,6 +510,7 @@ async updateShelf(id: number, shelfItemId?: number) {
       data: { ShelfItemId: shelfItemId ?? null },
     });
 
+    await this.audit.log({ entityType: 'Communication', entityId: id, action: 'update_shelf', userId, changes: { after: { shelfItemId: shelfItemId ?? null } } });
     return this.getDetails(id);
   }
 
