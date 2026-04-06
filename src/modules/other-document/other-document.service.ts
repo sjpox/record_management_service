@@ -11,6 +11,7 @@ import sharp from 'sharp';
 
 const selectFields = {
   Id: true,
+  DocumentNo: true,
   Title: true,
   Particulars: true,
   DateArchived: true,
@@ -95,6 +96,7 @@ export class OtherDocumentService {
 
     if (query.search) {
       where.OR = [
+        { DocumentNo: { contains: query.search } },
         { Title: { contains: query.search } },
         { Particulars: { contains: query.search } },
       ];
@@ -193,8 +195,15 @@ export class OtherDocumentService {
 
     try {
       const document = await this.prisma.$transaction(async (tx) => {
+        const year = new Date().getFullYear();
+        const count = await tx.otherDocument.count({
+          where: { DocumentNo: { startsWith: `OD-${year}-` } },
+        });
+        const documentNo = `OD-${year}-${String(count + 1).padStart(4, '0')}`;
+
         const created = await tx.otherDocument.create({
           data: {
+            DocumentNo: documentNo,
             Title: dto.Title,
             Particulars: dto.Particulars,
             AddedById: userId,

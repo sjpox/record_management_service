@@ -275,6 +275,7 @@ model MaintenanceConfig {
 // Other Document
 model OtherDocument {
   Id         Int      @id @default(autoincrement()) @map("other_document_id")
+  DocumentNo String   @unique @db.VarChar(20) @map("document_no")
   Title     String   @db.VarChar(100) @map("title")
   Particulars    String  @db.LongText @map("particulars")
   DateArchived    DateTime   @default(now()) @db.DateTime @map("date_archived")
@@ -294,7 +295,7 @@ model OtherDocument {
   @@index([LastModifiedById])
   @@index([DateArchived])
   @@index([ShelfItemId])
-  @@map("general_document")
+  @@map("other_document")
 }
 
 // Communications Logging

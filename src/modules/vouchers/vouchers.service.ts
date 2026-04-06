@@ -690,6 +690,15 @@ export class VouchersService {
       }
     }
 
+    if (created > 0) {
+      this.auditService.log({
+        entityType: 'Voucher',
+        action: 'BULK_CREATE',
+        userId,
+        changes: { after: { created, skipped, failed } },
+      });
+    }
+
     return { created, skipped, failed, duplicates, errors };
   }
 
