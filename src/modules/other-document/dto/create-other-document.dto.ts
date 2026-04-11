@@ -8,6 +8,11 @@ export class CreateOtherDocumentDto {
   @IsString()
   Title: string;
 
+  @ApiProperty({ example: 'Memorandum' })
+  @IsNotEmpty()
+  @IsString()
+  DocumentType: string;
+
   @ApiProperty({ example: 'Receipt for office supplies purchased' })
   @IsNotEmpty()
   @IsString()

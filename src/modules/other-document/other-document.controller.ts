@@ -19,6 +19,7 @@ import { CreateOtherDocumentDto } from './dto/create-other-document.dto';
 import { UpdateOtherDocumentDto } from './dto/update-other-document.dto';
 import { OtherDocumentQueryDto } from './dto/other-document-query.dto';
 import { UpdateOtherDocumentPhotosDto } from './dto/update-photos.dto';
+import { CreateDocumentTypeDto, UpdateDocumentTypeDto } from './dto/document-type.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -33,6 +34,33 @@ export class OtherDocumentController {
   @ApiOperation({ summary: 'Get all other documents with pagination and filters' })
   findAll(@Query() query: OtherDocumentQueryDto) {
     return this.service.findAll(query);
+  }
+
+  @Get('document-types')
+  @ApiOperation({ summary: 'Get all other document types' })
+  getDocumentTypes() {
+    return this.service.getDocumentTypes();
+  }
+
+  @Post('document-types')
+  @ApiOperation({ summary: 'Create a new document type' })
+  createDocumentType(@Body() dto: CreateDocumentTypeDto) {
+    return this.service.createDocumentType(dto);
+  }
+
+  @Put('document-types/:typeId')
+  @ApiOperation({ summary: 'Update a document type' })
+  updateDocumentType(
+    @Param('typeId', ParseIntPipe) typeId: number,
+    @Body() dto: UpdateDocumentTypeDto,
+  ) {
+    return this.service.updateDocumentType(typeId, dto);
+  }
+
+  @Delete('document-types/:typeId')
+  @ApiOperation({ summary: 'Delete a document type' })
+  removeDocumentType(@Param('typeId', ParseIntPipe) typeId: number) {
+    return this.service.deleteDocumentType(typeId);
   }
 
   @Get(':id')
