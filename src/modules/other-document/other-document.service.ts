@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { CreateOtherDocumentDto } from './dto/create-other-document.dto';
 import { UpdateOtherDocumentDto } from './dto/update-other-document.dto';
 import { OtherDocumentQueryDto } from './dto/other-document-query.dto';
+import { CreateDocumentTypeDto, UpdateDocumentTypeDto } from './dto/document-type.dto';
 import { PaginatedResult } from '../../common/dto/pagination.dto';
 import { OtherDocument } from '@prisma/client';
 import sharp from 'sharp';
@@ -12,6 +13,7 @@ import sharp from 'sharp';
 const selectFields = {
   Id: true,
   DocumentNo: true,
+  DocumentType: { select: { Id: true, Type: true } },
   Title: true,
   Particulars: true,
   DateArchived: true,
@@ -201,6 +203,16 @@ export class OtherDocumentService {
         });
         const documentNo = `OD-${year}-${String(count + 1).padStart(4, '0')}`;
 
+        let documentTypeId: number | null = null;
+        if (dto.DocumentType) {
+          const docType = await tx.otherDocumentType.upsert({
+            where: { Type: dto.DocumentType },
+            update: {},
+            create: { Type: dto.DocumentType },
+          });
+          documentTypeId = docType.Id;
+        }
+
         const created = await tx.otherDocument.create({
           data: {
             DocumentNo: documentNo,
@@ -208,6 +220,7 @@ export class OtherDocumentService {
             Particulars: dto.Particulars,
             AddedById: userId,
             ShelfItemId: dto.ShelfItemId ?? null,
+            DocumentTypeId: documentTypeId,
           },
         });
 
@@ -273,6 +286,15 @@ export class OtherDocumentService {
       if (dto.Particulars !== undefined) updateData.Particulars = dto.Particulars;
       if (dto.ShelfItemId !== undefined) updateData.ShelfItemId = dto.ShelfItemId ?? null;
       updateData.LastModifiedById = userId;
+
+      if (dto.DocumentType !== undefined) {
+        const docType = await this.prisma.otherDocumentType.upsert({
+          where: { Type: dto.DocumentType },
+          update: {},
+          create: { Type: dto.DocumentType },
+        });
+        updateData.DocumentTypeId = docType.Id;
+      }
 
       const { before, updated } = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.otherDocument.findUnique({
@@ -433,6 +455,65 @@ export class OtherDocumentService {
       imageFileType: p.ImageFileType,
       imageFileSize: p.ImageFileSize,
     }));
+  }
+
+  async getDocumentTypes() {
+    return this.prisma.otherDocumentType.findMany({
+      select: { Id: true, Type: true },
+      orderBy: { Type: 'asc' },
+    });
+  }
+
+  async createDocumentType(dto: CreateDocumentTypeDto) {
+    const existing = await this.prisma.otherDocumentType.findUnique({
+      where: { Type: dto.Type },
+    });
+    if (existing) {
+      throw new BadRequestException(`Document type "${dto.Type}" already exists`);
+    }
+    return this.prisma.otherDocumentType.create({
+      data: { Type: dto.Type },
+      select: { Id: true, Type: true },
+    });
+  }
+
+  async updateDocumentType(id: number, dto: UpdateDocumentTypeDto) {
+    const existing = await this.prisma.otherDocumentType.findUnique({
+      where: { Id: id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Document type with ID ${id} not found`);
+    }
+    const duplicate = await this.prisma.otherDocumentType.findUnique({
+      where: { Type: dto.Type },
+    });
+    if (duplicate && duplicate.Id !== id) {
+      throw new BadRequestException(`Document type "${dto.Type}" already exists`);
+    }
+    return this.prisma.otherDocumentType.update({
+      where: { Id: id },
+      data: { Type: dto.Type },
+      select: { Id: true, Type: true },
+    });
+  }
+
+  async deleteDocumentType(id: number) {
+    const existing = await this.prisma.otherDocumentType.findUnique({
+      where: { Id: id },
+      include: { _count: { select: { OtherDocuments: true } } },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Document type with ID ${id} not found`);
+    }
+    if (existing._count.OtherDocuments > 0) {
+      throw new BadRequestException(
+        `Cannot delete document type "${existing.Type}" because it is used by ${existing._count.OtherDocuments} document(s)`,
+      );
+    }
+    return this.prisma.otherDocumentType.delete({
+      where: { Id: id },
+      select: { Id: true, Type: true },
+    });
   }
 
   async remove(id: number, userId: number) {

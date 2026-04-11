@@ -272,10 +272,21 @@ model MaintenanceConfig {
   @@map("maintenance_config")
 }
 
+// Other Document Type
+model OtherDocumentType {
+  Id   Int    @id @default(autoincrement()) @map("other_document_type_id")
+  Type String @unique @db.VarChar(100) @map("type")
+
+  OtherDocuments OtherDocument[]
+
+  @@map("other_document_type")
+}
+
 // Other Document
 model OtherDocument {
   Id         Int      @id @default(autoincrement()) @map("other_document_id")
   DocumentNo String   @unique @db.VarChar(20) @map("document_no")
+  DocumentTypeId Int? @map("document_type_id")
   Title     String   @db.VarChar(100) @map("title")
   Particulars    String  @db.LongText @map("particulars")
   DateArchived    DateTime   @default(now()) @db.DateTime @map("date_archived")
@@ -286,11 +297,13 @@ model OtherDocument {
   ShelfItemId     Int?       @map("shelf_item_id")
 
   // Relations
+  DocumentType    OtherDocumentType? @relation(fields: [DocumentTypeId], references: [Id])
   AddedBy         Users?      @relation("OtherDocumentAddedBy", fields: [AddedById], references: [Id])
   LastModifiedBy  Users?      @relation("OtherDocumentModifiedBy", fields: [LastModifiedById], references: [Id])
   ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   DocumentImages  DocumentImages[]
 
+  @@index([DocumentTypeId])
   @@index([AddedById])
   @@index([LastModifiedById])
   @@index([DateArchived])
