@@ -96,6 +96,10 @@ export class OtherDocumentService {
       where.Title = { contains: query.title };
     }
 
+    if (query.documentType) {
+      where.DocumentType = { Type: query.documentType };
+    }
+
     if (query.search) {
       where.OR = [
         { DocumentNo: { contains: query.search } },
