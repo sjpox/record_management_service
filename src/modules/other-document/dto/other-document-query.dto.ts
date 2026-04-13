@@ -12,4 +12,9 @@ export class OtherDocumentQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   title?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by document type name' })
+  @IsOptional()
+  @IsString()
+  documentType?: string;
 }

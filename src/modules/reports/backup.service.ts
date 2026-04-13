@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { S3Client } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
 import { Client as FtpClient } from 'basic-ftp';
 import { exec } from 'child_process';
 import * as fs from 'fs';
@@ -14,18 +12,6 @@ import * as archiver from 'archiver';
 @Injectable()
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
-
-  private readonly s3 = new S3Client({
-    region: process.env.AWS_REGION ?? 'us-east-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-    },
-  });
-
-  private readonly bucket = process.env.BACKUP_S3_BUCKET ?? '';
-  private readonly dbBackupPrefix = process.env.BACKUP_S3_PREFIX ?? 'database-backups';
-  private readonly ftpBackupPrefix = process.env.BACKUP_S3_FTP_PREFIX ?? 'ftp-backups';
 
   private readonly ftpConfig = {
     host: process.env.FTP_HOST ?? '127.0.0.1',
@@ -40,41 +26,18 @@ export class BackupService {
   private readonly mysqldumpPath = process.env.MYSQLDUMP_PATH ?? 'mysqldump';
   private readonly localBackupDir = process.env.BACKUP_LOCAL_DIR ?? path.join(process.cwd(), 'backups');
 
-  private async uploadToS3OrLocal(
-    filePath: string,
-    s3Key: string,
-    contentType: string,
-  ): Promise<{ destination: 's3' | 'local'; location: string }> {
+  private saveToLocal(filePath: string, subDir: string): string {
     const filename = path.basename(filePath);
+    const dateDir = new Date().toISOString().slice(0, 10);
+    const localDir = path.join(this.localBackupDir, subDir, dateDir);
 
-    try {
-      const fileStream = fs.createReadStream(filePath);
-      const upload = new Upload({
-        client: this.s3,
-        params: {
-          Bucket: this.bucket,
-          Key: s3Key,
-          Body: fileStream,
-          ContentType: contentType,
-        },
-      });
-      await upload.done();
-      return { destination: 's3', location: `s3://${this.bucket}/${s3Key}` };
-    } catch (s3Error) {
-      this.logger.warn(
-        `S3 upload failed, saving locally`,
-        s3Error instanceof Error ? s3Error.stack : s3Error,
-      );
-
-      const localDir = path.join(this.localBackupDir, path.dirname(s3Key));
-      if (!fs.existsSync(localDir)) {
-        fs.mkdirSync(localDir, { recursive: true });
-      }
-
-      const localPath = path.join(localDir, filename);
-      fs.copyFileSync(filePath, localPath);
-      return { destination: 'local', location: localPath };
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
     }
+
+    const localPath = path.join(localDir, filename);
+    fs.copyFileSync(filePath, localPath);
+    return localPath;
   }
 
   private parseDatabaseUrl(): {
@@ -139,16 +102,14 @@ export class BackupService {
       fs.writeFileSync(tempFile, gzipped);
       fs.unlinkSync(sqlPath);
 
-      // Upload to S3, fallback to local
-      const dateDir = new Date().toISOString().slice(0, 10);
-      const s3Key = `${this.dbBackupPrefix}/${dateDir}/${filename}`;
-      const result = await this.uploadToS3OrLocal(tempFile, s3Key, 'application/gzip');
+      // Save to local backup directory
+      const localPath = this.saveToLocal(tempFile, 'database-backups');
 
       const fileSize = fs.statSync(tempFile).size;
       const sizeMb = (fileSize / (1024 * 1024)).toFixed(2);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(
-        `Database backup saved (${result.destination}): ${result.location} (${sizeMb} MB in ${duration}s)`,
+        `Database backup saved: ${localPath} (${sizeMb} MB in ${duration}s)`,
       );
     } catch (error) {
       this.logger.error(
@@ -165,7 +126,7 @@ export class BackupService {
 
   @Cron('30 12,17 * * *', { name: 'ftp-files-backup' })
   async handleFtpBackup(): Promise<void> {
-    this.logger.log('Starting FTP files backup to S3...');
+    this.logger.log('Starting FTP files backup...');
     const startTime = Date.now();
     let fileCount = 0;
     let errorCount = 0;
@@ -224,16 +185,14 @@ export class BackupService {
       await archive.finalize();
       await archiveReady;
 
-      // Upload zip to S3, fallback to local
-      const dateDir = new Date().toISOString().slice(0, 10);
-      const s3Key = `${this.ftpBackupPrefix}/${dateDir}/${zipFilename}`;
-      const result = await this.uploadToS3OrLocal(zipPath, s3Key, 'application/zip');
+      // Save to local backup directory
+      const localPath = this.saveToLocal(zipPath, 'ftp-backups');
 
       const zipSize = fs.statSync(zipPath).size;
       const sizeMb = (zipSize / (1024 * 1024)).toFixed(2);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(
-        `FTP backup saved (${result.destination}): ${result.location} (${fileCount} files, ${sizeMb} MB, ${errorCount} errors, ${duration}s)`,
+        `FTP backup saved: ${localPath} (${fileCount} files, ${sizeMb} MB, ${errorCount} errors, ${duration}s)`,
       );
     } catch (error) {
       this.logger.error(
