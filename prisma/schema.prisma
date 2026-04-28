@@ -147,7 +147,6 @@ model IndexDocument {
   ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
   DocumentImages  DocumentImages[]
 
-  @@index([Payee])
   @@index([period_start, period_end])
   @@index([AddedById])
   @@index([LastModifiedById])
@@ -194,7 +193,6 @@ model Location {
   CabinetsAsFloor     Cabinet[] @relation("CabinetFloor")
   CabinetsAsRoom      Cabinet[] @relation("CabinetRoom")
 
-  @@unique([Name, Type, ParentId])
   @@index([Type])
   @@index([ParentId])
   @@map("locations")
@@ -258,7 +256,6 @@ model ShelfItem {
   Communications  Communication[]
 
   @@index([ShelfId])
-  @@index([Category])
   @@map("shelf_items")
 }
 
@@ -392,7 +389,6 @@ model CommActionAssignee {
 
   @@index([ActionId])
   @@index([UserId])
-  @@index([Name])
   @@map("comm_action_assignees")
 }
 
@@ -510,7 +506,6 @@ model RecipientGroup {
   CreatedBy   Users     @relation("RecipientGroupCreatedBy", fields: [CreatedById], references: [Id])
   Members     RecipientGroupMember[]
 
-  @@index([GroupKey, Status])
   @@index([Status])
   @@index([CreatedById])
   @@map("recipient_groups")
