@@ -4,6 +4,13 @@ A NestJS backend API for managing voucher records with MySQL, JWT authentication
 
 ## Release Notes
 
+### v1.8.0
+
+**Changes**
+- Backup strategy simplified to local-only — database and FTP backups are now saved exclusively to the local filesystem under `BACKUP_LOCAL_DIR` (organized as `<type>/<date>/<filename>`)
+- Removed S3 upload logic and AWS SDK dependencies (`@aws-sdk/client-s3`, `@aws-sdk/lib-storage`)
+- `BACKUP_S3_BUCKET`, `BACKUP_S3_PREFIX`, `BACKUP_S3_FTP_PREFIX`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` environment variables are no longer used
+
 ### v1.7.1
 
 **Bug Fixes**
