@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Subject } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -18,6 +18,20 @@ export class ChatService {
   // Observable for broadcasting new messages in real-time
   readonly newMessage$ = new Subject<{
     message: any;
+    conversationId: number;
+    recipientIds: number[];
+  }>();
+
+  // Observable for broadcasting conversation updates (name or members changed)
+  readonly conversationUpdated$ = new Subject<{
+    conversation: any;
+    recipientIds: number[];
+    addedUserIds: number[];
+    removedUserIds: number[];
+  }>();
+
+  // Observable for broadcasting conversation deletion
+  readonly conversationDeleted$ = new Subject<{
     conversationId: number;
     recipientIds: number[];
   }>();
@@ -91,6 +105,7 @@ export class ChatService {
       id: String(conv.Id),
       name: conv.Name || null,
       isGroup: conv.IsGroup,
+      createdById: conv.CreatedById ?? null,
       participants: (conv.Participants || []).map((p: any) => ({
         id: p.User.Id,
         firstName: p.User.FirstName,
@@ -329,5 +344,134 @@ export class ChatService {
       },
       data: { ReadAt: new Date() },
     });
+  }
+
+  // -- Group management --
+
+  async updateGroupConversation(
+    conversationId: number,
+    userId: number,
+    updates: { name?: string; participantIds?: number[] },
+  ) {
+    const conv = await this.prisma.chatConversation.findUnique({
+      where: { Id: conversationId },
+      include: { Participants: { select: { UserId: true } } },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
+    if (!conv.IsGroup) throw new BadRequestException('Only group chats can be edited');
+    if (conv.CreatedById !== userId) throw new ForbiddenException('Only the group creator can edit this group');
+
+    const beforeName = conv.Name;
+    const beforeMemberIds = conv.Participants.map((p) => p.UserId).sort();
+
+    let addedUserIds: number[] = [];
+    let removedUserIds: number[] = [];
+
+    if (updates.participantIds !== undefined) {
+      // Always include the creator
+      const desiredIds = Array.from(new Set([userId, ...updates.participantIds]));
+
+      if (desiredIds.length < 3) {
+        throw new BadRequestException('Group chat requires at least 3 participants');
+      }
+
+      const users = await this.prisma.users.findMany({
+        where: { Id: { in: desiredIds } },
+        select: { Id: true },
+      });
+      if (users.length !== desiredIds.length) {
+        throw new NotFoundException('One or more users not found');
+      }
+
+      addedUserIds = desiredIds.filter((id) => !beforeMemberIds.includes(id));
+      removedUserIds = beforeMemberIds.filter((id) => !desiredIds.includes(id));
+
+      if (removedUserIds.includes(userId)) {
+        throw new BadRequestException('The group creator cannot be removed');
+      }
+
+      await this.prisma.$transaction([
+        ...(removedUserIds.length > 0
+          ? [
+              this.prisma.chatParticipant.deleteMany({
+                where: { ConversationId: conversationId, UserId: { in: removedUserIds } },
+              }),
+            ]
+          : []),
+        ...(addedUserIds.length > 0
+          ? [
+              this.prisma.chatParticipant.createMany({
+                data: addedUserIds.map((id) => ({ ConversationId: conversationId, UserId: id })),
+              }),
+            ]
+          : []),
+      ]);
+    }
+
+    if (updates.name !== undefined && updates.name.trim() !== '' && updates.name !== beforeName) {
+      await this.prisma.chatConversation.update({
+        where: { Id: conversationId },
+        data: { Name: updates.name },
+      });
+    }
+
+    const updated = await this.prisma.chatConversation.findUnique({
+      where: { Id: conversationId },
+      include: {
+        Participants: { include: { User: { select: userSelect } } },
+        Messages: { orderBy: { CreatedAt: 'desc' }, take: 1 },
+      },
+    });
+
+    const formatted = this.formatConversation(updated, 0);
+    const recipientIds = updated!.Participants.map((p) => p.UserId);
+
+    this.conversationUpdated$.next({
+      conversation: formatted,
+      // Notify both current members and newly added/removed users
+      recipientIds: Array.from(new Set([...recipientIds, ...removedUserIds])),
+      addedUserIds,
+      removedUserIds,
+    });
+
+    await this.audit.log({
+      entityType: 'ChatConversation',
+      entityId: conversationId,
+      action: 'update_group',
+      userId,
+      changes: {
+        before: { name: beforeName, memberIds: beforeMemberIds },
+        after: { name: updates.name ?? beforeName, addedUserIds, removedUserIds },
+      },
+    });
+
+    return formatted;
+  }
+
+  async deleteGroupConversation(conversationId: number, userId: number) {
+    const conv = await this.prisma.chatConversation.findUnique({
+      where: { Id: conversationId },
+      include: { Participants: { select: { UserId: true } } },
+    });
+    if (!conv) throw new NotFoundException('Conversation not found');
+    if (!conv.IsGroup) throw new BadRequestException('Only group chats can be deleted');
+    if (conv.CreatedById !== userId) throw new ForbiddenException('Only the group creator can delete this group');
+
+    const recipientIds = conv.Participants.map((p) => p.UserId);
+
+    // Cascade-deletes Participants and Messages via FK onDelete: Cascade
+    await this.prisma.chatConversation.delete({ where: { Id: conversationId } });
+
+    this.conversationDeleted$.next({ conversationId, recipientIds });
+
+    await this.audit.log({
+      entityType: 'ChatConversation',
+      entityId: conversationId,
+      action: 'delete_group',
+      userId,
+      changes: { before: { name: conv.Name, memberIds: recipientIds } },
+    });
+
+    return { success: true };
   }
 }
