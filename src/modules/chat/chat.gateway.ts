@@ -53,6 +53,28 @@ export class ChatGateway
       }),
     );
 
+    this.subscriptions.push(
+      this.chatService.conversationUpdated$.subscribe(({ conversation, recipientIds, addedUserIds, removedUserIds }) => {
+        for (const userId of recipientIds) {
+          this.server.to(`user:${userId}`).emit('conversationUpdated', {
+            conversation,
+            removed: removedUserIds.includes(userId),
+            added: addedUserIds.includes(userId),
+          });
+        }
+      }),
+    );
+
+    this.subscriptions.push(
+      this.chatService.conversationDeleted$.subscribe(({ conversationId, recipientIds }) => {
+        for (const userId of recipientIds) {
+          this.server.to(`user:${userId}`).emit('conversationDeleted', {
+            conversationId: String(conversationId),
+          });
+        }
+      }),
+    );
+
     this.logger.log('Chat WebSocket gateway initialized');
   }
 

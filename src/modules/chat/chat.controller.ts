@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Param, UseGuards, ParseIntPipe, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, ParseIntPipe, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -67,5 +68,25 @@ export class ChatController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.chatService.markAsRead(id, user.Id);
+  }
+
+  @Patch('conversations/:id')
+  updateConversation(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateConversationDto,
+  ) {
+    return this.chatService.updateGroupConversation(id, user.Id, {
+      name: dto.name,
+      participantIds: dto.participantIds,
+    });
+  }
+
+  @Delete('conversations/:id')
+  deleteConversation(
+    @CurrentUser() user: { Id: number },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.chatService.deleteGroupConversation(id, user.Id);
   }
 }
