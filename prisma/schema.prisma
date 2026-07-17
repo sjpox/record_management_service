@@ -59,6 +59,9 @@ model Users {
   OtherDocumentsAdded    OtherDocument[] @relation("OtherDocumentAddedBy")
   OtherDocumentsModified OtherDocument[] @relation("OtherDocumentModifiedBy")
 
+  // Relations for Voucher Ageing Config
+  VoucherAgeingConfigUpdates VoucherAgeingConfig[]
+
   @@map("users")
 }
 
@@ -267,6 +270,18 @@ model MaintenanceConfig {
   UpdatedAt   DateTime @default(now()) @updatedAt @db.DateTime @map("updated_at")
 
   @@map("maintenance_config")
+}
+
+// Voucher Ageing Configuration (single-row table)
+model VoucherAgeingConfig {
+  Id            Int      @id @default(1) @map("config_id")
+  ThresholdDays Int      @default(30) @map("threshold_days")
+  UpdatedAt     DateTime @default(now()) @updatedAt @db.DateTime @map("updated_at")
+  UpdatedById   Int?     @map("updated_by_id")
+
+  UpdatedBy Users? @relation(fields: [UpdatedById], references: [Id])
+
+  @@map("voucher_ageing_config")
 }
 
 // Other Document Type
