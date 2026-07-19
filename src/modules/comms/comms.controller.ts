@@ -114,6 +114,15 @@ export class CommsController {
 
   // ── Image Endpoints ────────────────────────────────────────────
 
+  @Post(':id/compose-pdf')
+  composePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('color') color?: string,
+    @Body() body?: { imageIds?: number[]; crops?: { imageId: number; left: number; top: number; width: number; height: number }[] },
+  ) {
+    return this.commsService.composePdf(id, color === 'bw', body?.imageIds ?? [], body?.crops);
+  }
+
   @Get(':id/details')
   getDetails(@Param('id', ParseIntPipe) id: number) {
     return this.commsService.getDetails(id);

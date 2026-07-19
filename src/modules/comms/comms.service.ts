@@ -850,6 +850,53 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     return result;
   }
 
+  async composePdf(
+    id: number,
+    isBlackAndWhite = false,
+    imageIds: number[] = [],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+  ): Promise<{ fileType: string; fileSize: number; base64: string }> {
+    const comm = await this.prisma.communication.findUnique({
+      where: { Id: id },
+      include: { Images: true },
+    });
+    if (!comm) throw new NotFoundException('Communication not found');
+
+    const selectedImages = imageIds.length > 0
+      ? comm.Images.filter((img) => imageIds.includes(img.Id))
+      : comm.Images;
+
+    if (selectedImages.length === 0) {
+      throw new BadRequestException('No images found for the selected IDs');
+    }
+
+    const filePaths = selectedImages.map((img) => img.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    if (crops) {
+      for (const crop of crops) {
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+      }
+    }
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    for (const img of selectedImages) {
+      const buffer = downloadedFiles.get(img.ImageFile);
+      if (buffer) imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+    }
+
+    if (imageEntries.length === 0) {
+      throw new BadRequestException('Failed to download images for PDF composition');
+    }
+
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false);
+    return {
+      fileType: 'pdf',
+      fileSize: pdfBuffer.length,
+      base64: `data:application/pdf;base64,${pdfBuffer.toString('base64')}`,
+    };
+  }
+
   async deleteReply(replyId: number, userId: number) {
     const reply = await this.prisma.commActionReply.findUnique({
       where: { Id: replyId },
