@@ -592,6 +592,63 @@ export class VouchersService {
     }
   }
 
+  async deleteFromSourcePool(id: number, reason: string, userId: number): Promise<void> {
+    const voucher = await this.prisma.vouchers.findUnique({ where: { Id: id } });
+    if (!voucher) throw new NotFoundException('Voucher not found');
+
+    // Collect FTP folder paths before deleting from DB
+    const photos = await this.prisma.voucherImages.findMany({ where: { VoucherId: id } });
+    const folderPaths = new Set(
+      photos.map((p) => p.ImageFile.substring(0, p.ImageFile.lastIndexOf('/'))).filter(Boolean),
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      // Save a copy of the record to the deletion log before deleting
+      await tx.voucherDeletionLog.create({
+        data: {
+          VoucherNo: voucher.VoucherNo,
+          TransactionNo: voucher.TransactionNo ?? null,
+          Payee: voucher.Payee,
+          Particulars: voucher.Particulars,
+          ClaimType: voucher.ClaimType ?? null,
+          Amount: voucher.Amount,
+          DateDisbursed: voucher.DateDisbursed,
+          IsArchived: voucher.IsArchived,
+          DeleteReason: reason,
+          DeletedById: userId,
+        },
+      });
+
+      await tx.voucherImages.deleteMany({ where: { VoucherId: id } });
+      await tx.vouchers.delete({ where: { Id: id } });
+    });
+
+    // Delete FTP folders after successful DB transaction
+    for (const folder of folderPaths) {
+      await this.ftpService.deleteDirectory(folder);
+    }
+
+    await this.auditService.log({
+      entityType: 'Voucher',
+      entityId: id,
+      action: 'delete',
+      userId,
+      changes: {
+        before: {
+          voucherNo: voucher.VoucherNo,
+          transactionNo: voucher.TransactionNo,
+          payee: voucher.Payee,
+          particulars: voucher.Particulars,
+          claimType: voucher.ClaimType,
+          amount: voucher.Amount,
+          dateDisbursed: voucher.DateDisbursed,
+          isArchived: voucher.IsArchived,
+          deleteReason: reason,
+        },
+      },
+    });
+  }
+
   async bulkCreate(vouchers: CreateVoucherDto[], userId: number): Promise<{
     created: number;
     skipped: number;

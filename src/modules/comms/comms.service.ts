@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
 import { AuditService } from '../audit/audit.service';
@@ -251,12 +252,12 @@ export class CommsService {
 
     // Notify registered assignees
     for (const action of comm.Actions) {
-      await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject);
+      await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject, comm.Id);
     }
 
     // Notify recipient users
     if (dto.recipientUserIds?.length) {
-      await this.notifyRecipients(dto.recipientUserIds, comm.ReferenceNumber, comm.Subject, userId);
+      await this.notifyRecipients(dto.recipientUserIds, comm.ReferenceNumber, comm.Subject, userId, comm.Id);
     }
 
     return result;
@@ -346,7 +347,7 @@ export class CommsService {
             include: { Assignees: true },
           });
           const comm = await this.prisma.communication.findUnique({ where: { Id: id }, select: { ReferenceNumber: true, Subject: true } });
-          await this.notifyAssignees(newAction, comm!.ReferenceNumber, comm!.Subject);
+          await this.notifyAssignees(newAction, comm!.ReferenceNumber, comm!.Subject, id);
         }
       }
     }
@@ -401,15 +402,50 @@ export class CommsService {
     await this.audit.log({ entityType: 'Communication', entityId: id, action: 'delete', userId });
   }
 
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async markOverdueActions() {
+    const now = new Date();
+
+    // Mark all pending actions past their due date as overdue
+    await this.prisma.commAction.updateMany({
+      where: {
+        Status: 'pending',
+        DueDate: { lt: now },
+      },
+      data: { Status: 'overdue' },
+    });
+
+    // Recalculate comm status for every communication that currently has an overdue action
+    const affectedComms = await this.prisma.commAction.findMany({
+      where: { Status: 'overdue' },
+      select: { CommunicationId: true },
+      distinct: ['CommunicationId'],
+    });
+
+    for (const { CommunicationId } of affectedComms) {
+      await this.recalcCommStatus(CommunicationId);
+    }
+  }
+
   async toggleActionStatus(actionId: number, userId: number) {
     const action = await this.prisma.commAction.findUnique({ where: { Id: actionId } });
     if (!action) throw new NotFoundException('Action not found');
 
-    const isCompleting = action.Status !== 'completed';
+    // Cycle: pending → in-progress → completed → pending
+    let nextStatus: string;
+    if (action.Status === 'pending' || action.Status === 'overdue') {
+      nextStatus = 'in-progress';
+    } else if (action.Status === 'in-progress') {
+      nextStatus = 'completed';
+    } else {
+      nextStatus = 'pending';
+    }
+
+    const isCompleting = nextStatus === 'completed';
     await this.prisma.commAction.update({
       where: { Id: actionId },
       data: {
-        Status: isCompleting ? 'completed' : 'pending',
+        Status: nextStatus,
         CompletedAt: isCompleting ? new Date() : null,
         CompletedById: isCompleting ? userId : null,
       },
@@ -417,11 +453,12 @@ export class CommsService {
 
     await this.recalcCommStatus(action.CommunicationId, actionId, isCompleting);
 
-    await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: isCompleting ? 'complete' : 'reopen', userId });
+    const auditAction = isCompleting ? 'complete' : nextStatus === 'in-progress' ? 'start' : 'reopen';
+    await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: auditAction, userId });
     return this.getDetails(action.CommunicationId);
   }
 
-  private async notifyRecipients(userIds: number[], referenceNumber: string, subject: string, senderUserId: number) {
+  private async notifyRecipients(userIds: number[], referenceNumber: string, subject: string, senderUserId: number, commId: number) {
     for (const uid of userIds) {
       if (uid === senderUserId) continue; // Don't notify the sender
       await this.notifications.notify({
@@ -430,11 +467,12 @@ export class CommsService {
         title: 'You are a recipient of a communication',
         body: `[${referenceNumber}] ${subject}`,
         entityType: 'Communication',
+        entityId: commId,
       });
     }
   }
 
-  private async notifyAssignees(action: any, referenceNumber: string, subject: string) {
+  private async notifyAssignees(action: any, referenceNumber: string, subject: string, commId: number) {
     for (const assignee of action.Assignees || []) {
       if (!assignee.UserId) continue;
       await this.notifications.notify({
@@ -442,8 +480,8 @@ export class CommsService {
         type: 'comm_action_assigned',
         title: 'You have been assigned an action item',
         body: `[${referenceNumber}] ${subject}: ${action.ActionRequired}`,
-        entityType: 'CommAction',
-        entityId: action.Id,
+        entityType: 'Communication',
+        entityId: commId,
       });
     }
   }
@@ -469,11 +507,16 @@ export class CommsService {
             !(a.Id === toggledActionId && isCompleting) &&
             a.DueDate !== null && a.DueDate < now,
         );
+        const anyInProgress = allActions.some(
+          (a) =>
+            a.Status === 'in-progress' ||
+            (a.Id === toggledActionId && !isCompleting && a.Status !== 'pending'),
+        );
         const anyCompleted = allActions.some(
           (a) => a.Status === 'completed' || (a.Id === toggledActionId && isCompleting),
         );
         if (hasOverdue) commStatus = 'overdue';
-        else if (anyCompleted) commStatus = 'in-progress';
+        else if (anyInProgress || anyCompleted) commStatus = 'in-progress';
       }
     }
 
@@ -724,6 +767,15 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
       }
     }
 
+    // Auto-advance action to in-progress on first reply if still pending
+    if (action.Status === 'pending') {
+      await this.prisma.commAction.update({
+        where: { Id: actionId },
+        data: { Status: 'in-progress' },
+      });
+      await this.recalcCommStatus(action.CommunicationId);
+    }
+
     // Create reply record
     const reply = await this.prisma.commActionReply.create({
       data: {
@@ -796,6 +848,53 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
 
     await this.audit.log({ entityType: 'CommActionReply', entityId: result.id, action: 'create', userId, changes: { after: { actionId, content: content?.trim() || null } } });
     return result;
+  }
+
+  async composePdf(
+    id: number,
+    isBlackAndWhite = false,
+    imageIds: number[] = [],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+  ): Promise<{ fileType: string; fileSize: number; base64: string }> {
+    const comm = await this.prisma.communication.findUnique({
+      where: { Id: id },
+      include: { Images: true },
+    });
+    if (!comm) throw new NotFoundException('Communication not found');
+
+    const selectedImages = imageIds.length > 0
+      ? comm.Images.filter((img) => imageIds.includes(img.Id))
+      : comm.Images;
+
+    if (selectedImages.length === 0) {
+      throw new BadRequestException('No images found for the selected IDs');
+    }
+
+    const filePaths = selectedImages.map((img) => img.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    if (crops) {
+      for (const crop of crops) {
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+      }
+    }
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    for (const img of selectedImages) {
+      const buffer = downloadedFiles.get(img.ImageFile);
+      if (buffer) imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+    }
+
+    if (imageEntries.length === 0) {
+      throw new BadRequestException('Failed to download images for PDF composition');
+    }
+
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false);
+    return {
+      fileType: 'pdf',
+      fileSize: pdfBuffer.length,
+      base64: `data:application/pdf;base64,${pdfBuffer.toString('base64')}`,
+    };
   }
 
   async deleteReply(replyId: number, userId: number) {

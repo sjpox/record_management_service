@@ -62,6 +62,9 @@ model Users {
   // Relations for Voucher Ageing Config
   VoucherAgeingConfigUpdates VoucherAgeingConfig[]
 
+  // Relations for Voucher Deletion Log
+  VoucherDeletionLogs VoucherDeletionLog[] @relation("VoucherDeletionLogDeletedBy")
+
   @@map("users")
 }
 
@@ -91,6 +94,26 @@ model Vouchers {
   @@index([AddedById])
   @@index([LastModifiedById])
   @@map("vouchers")
+}
+
+model VoucherDeletionLog {
+  Id            Int       @id @default(autoincrement()) @map("id")
+  VoucherNo     String    @db.VarChar(50) @map("voucher_no")
+  TransactionNo String?   @db.VarChar(50) @map("transaction_no")
+  Payee         String    @db.VarChar(255) @map("payee")
+  Particulars   String    @db.Text @map("particulars")
+  ClaimType     String?   @db.VarChar(255) @map("claim_type")
+  Amount        Decimal   @db.Decimal(18, 2) @map("amount")
+  DateDisbursed DateTime  @db.DateTime @map("date_disbursed")
+  IsArchived    Boolean   @map("is_archived")
+  DeleteReason  String    @db.Text @map("delete_reason")
+  DeletedAt     DateTime  @default(now()) @db.DateTime @map("deleted_at")
+  DeletedById   Int?      @map("deleted_by_id")
+
+  DeletedBy     Users?    @relation("VoucherDeletionLogDeletedBy", fields: [DeletedById], references: [Id], onDelete: SetNull)
+
+  @@index([DeletedById])
+  @@map("voucher_deletion_log")
 }
 
 // Photo Tables
