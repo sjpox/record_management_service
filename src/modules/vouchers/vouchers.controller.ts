@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -119,6 +120,16 @@ export class VouchersController {
     @CurrentUser() user: { Id: number },
   ) {
     return this.service.unarchive(id, user.Id);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a voucher from source pool and log the deletion' })
+  deleteFromSourcePool(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('reason') reason: string,
+    @CurrentUser() user: { Id: number },
+  ) {
+    return this.service.deleteFromSourcePool(id, reason, user.Id);
   }
 
   @Post('bulk')

@@ -407,7 +407,7 @@ export class CommsService {
     const now = new Date();
 
     // Mark all pending actions past their due date as overdue
-    const updated = await this.prisma.commAction.updateMany({
+    await this.prisma.commAction.updateMany({
       where: {
         Status: 'pending',
         DueDate: { lt: now },
@@ -415,14 +415,9 @@ export class CommsService {
       data: { Status: 'overdue' },
     });
 
-    if (updated.count === 0) return;
-
-    // Recalculate comm status for every affected communication
+    // Recalculate comm status for every communication that currently has an overdue action
     const affectedComms = await this.prisma.commAction.findMany({
-      where: {
-        Status: 'overdue',
-        DueDate: { lt: now },
-      },
+      where: { Status: 'overdue' },
       select: { CommunicationId: true },
       distinct: ['CommunicationId'],
     });
@@ -436,11 +431,21 @@ export class CommsService {
     const action = await this.prisma.commAction.findUnique({ where: { Id: actionId } });
     if (!action) throw new NotFoundException('Action not found');
 
-    const isCompleting = action.Status !== 'completed';
+    // Cycle: pending → in-progress → completed → pending
+    let nextStatus: string;
+    if (action.Status === 'pending' || action.Status === 'overdue') {
+      nextStatus = 'in-progress';
+    } else if (action.Status === 'in-progress') {
+      nextStatus = 'completed';
+    } else {
+      nextStatus = 'pending';
+    }
+
+    const isCompleting = nextStatus === 'completed';
     await this.prisma.commAction.update({
       where: { Id: actionId },
       data: {
-        Status: isCompleting ? 'completed' : 'pending',
+        Status: nextStatus,
         CompletedAt: isCompleting ? new Date() : null,
         CompletedById: isCompleting ? userId : null,
       },
@@ -448,7 +453,8 @@ export class CommsService {
 
     await this.recalcCommStatus(action.CommunicationId, actionId, isCompleting);
 
-    await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: isCompleting ? 'complete' : 'reopen', userId });
+    const auditAction = isCompleting ? 'complete' : nextStatus === 'in-progress' ? 'start' : 'reopen';
+    await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: auditAction, userId });
     return this.getDetails(action.CommunicationId);
   }
 
@@ -501,11 +507,16 @@ export class CommsService {
             !(a.Id === toggledActionId && isCompleting) &&
             a.DueDate !== null && a.DueDate < now,
         );
+        const anyInProgress = allActions.some(
+          (a) =>
+            a.Status === 'in-progress' ||
+            (a.Id === toggledActionId && !isCompleting && a.Status !== 'pending'),
+        );
         const anyCompleted = allActions.some(
           (a) => a.Status === 'completed' || (a.Id === toggledActionId && isCompleting),
         );
         if (hasOverdue) commStatus = 'overdue';
-        else if (anyCompleted) commStatus = 'in-progress';
+        else if (anyInProgress || anyCompleted) commStatus = 'in-progress';
       }
     }
 
@@ -754,6 +765,15 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
           throw new BadRequestException(`Invalid image file: ${file.originalname}`);
         }
       }
+    }
+
+    // Auto-advance action to in-progress on first reply if still pending
+    if (action.Status === 'pending') {
+      await this.prisma.commAction.update({
+        where: { Id: actionId },
+        data: { Status: 'in-progress' },
+      });
+      await this.recalcCommStatus(action.CommunicationId);
     }
 
     // Create reply record
