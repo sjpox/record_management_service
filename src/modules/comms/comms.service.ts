@@ -251,12 +251,12 @@ export class CommsService {
 
     // Notify registered assignees
     for (const action of comm.Actions) {
-      await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject);
+      await this.notifyAssignees(action, comm.ReferenceNumber, comm.Subject, comm.Id);
     }
 
     // Notify recipient users
     if (dto.recipientUserIds?.length) {
-      await this.notifyRecipients(dto.recipientUserIds, comm.ReferenceNumber, comm.Subject, userId);
+      await this.notifyRecipients(dto.recipientUserIds, comm.ReferenceNumber, comm.Subject, userId, comm.Id);
     }
 
     return result;
@@ -346,7 +346,7 @@ export class CommsService {
             include: { Assignees: true },
           });
           const comm = await this.prisma.communication.findUnique({ where: { Id: id }, select: { ReferenceNumber: true, Subject: true } });
-          await this.notifyAssignees(newAction, comm!.ReferenceNumber, comm!.Subject);
+          await this.notifyAssignees(newAction, comm!.ReferenceNumber, comm!.Subject, id);
         }
       }
     }
@@ -421,7 +421,7 @@ export class CommsService {
     return this.getDetails(action.CommunicationId);
   }
 
-  private async notifyRecipients(userIds: number[], referenceNumber: string, subject: string, senderUserId: number) {
+  private async notifyRecipients(userIds: number[], referenceNumber: string, subject: string, senderUserId: number, commId: number) {
     for (const uid of userIds) {
       if (uid === senderUserId) continue; // Don't notify the sender
       await this.notifications.notify({
@@ -430,11 +430,12 @@ export class CommsService {
         title: 'You are a recipient of a communication',
         body: `[${referenceNumber}] ${subject}`,
         entityType: 'Communication',
+        entityId: commId,
       });
     }
   }
 
-  private async notifyAssignees(action: any, referenceNumber: string, subject: string) {
+  private async notifyAssignees(action: any, referenceNumber: string, subject: string, commId: number) {
     for (const assignee of action.Assignees || []) {
       if (!assignee.UserId) continue;
       await this.notifications.notify({
@@ -442,8 +443,8 @@ export class CommsService {
         type: 'comm_action_assigned',
         title: 'You have been assigned an action item',
         body: `[${referenceNumber}] ${subject}: ${action.ActionRequired}`,
-        entityType: 'CommAction',
-        entityId: action.Id,
+        entityType: 'Communication',
+        entityId: commId,
       });
     }
   }
