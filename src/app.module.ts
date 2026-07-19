@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { HealthModule } from './modules/health/health.module';
@@ -22,6 +23,7 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     CommonModule,
     AuditModule,

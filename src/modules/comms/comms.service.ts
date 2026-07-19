@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
 import { AuditService } from '../audit/audit.service';
@@ -399,6 +400,36 @@ export class CommsService {
     if (!existing) throw new NotFoundException('Communication not found');
     await this.prisma.communication.delete({ where: { Id: id } });
     await this.audit.log({ entityType: 'Communication', entityId: id, action: 'delete', userId });
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async markOverdueActions() {
+    const now = new Date();
+
+    // Mark all pending actions past their due date as overdue
+    const updated = await this.prisma.commAction.updateMany({
+      where: {
+        Status: 'pending',
+        DueDate: { lt: now },
+      },
+      data: { Status: 'overdue' },
+    });
+
+    if (updated.count === 0) return;
+
+    // Recalculate comm status for every affected communication
+    const affectedComms = await this.prisma.commAction.findMany({
+      where: {
+        Status: 'overdue',
+        DueDate: { lt: now },
+      },
+      select: { CommunicationId: true },
+      distinct: ['CommunicationId'],
+    });
+
+    for (const { CommunicationId } of affectedComms) {
+      await this.recalcCommStatus(CommunicationId);
+    }
   }
 
   async toggleActionStatus(actionId: number, userId: number) {
