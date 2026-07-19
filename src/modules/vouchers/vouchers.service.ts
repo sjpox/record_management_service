@@ -633,6 +633,19 @@ export class VouchersService {
       entityId: id,
       action: 'delete',
       userId,
+      changes: {
+        before: {
+          voucherNo: voucher.VoucherNo,
+          transactionNo: voucher.TransactionNo,
+          payee: voucher.Payee,
+          particulars: voucher.Particulars,
+          claimType: voucher.ClaimType,
+          amount: voucher.Amount,
+          dateDisbursed: voucher.DateDisbursed,
+          isArchived: voucher.IsArchived,
+          deleteReason: reason,
+        },
+      },
     });
   }
 
