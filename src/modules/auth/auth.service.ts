@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -152,6 +152,24 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<{ message: string }> {
+    const user = await this.prisma.users.findUnique({ where: { Id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isValid = await bcrypt.compare(currentPassword, user.PasswordHash);
+    if (!isValid) throw new BadRequestException('Current password is incorrect');
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await this.prisma.users.update({
+      where: { Id: userId },
+      data: { PasswordHash: hashed },
+    });
+
+    this.auditService.log({ entityType: 'Auth', action: 'CHANGE_PASSWORD', userId });
+
+    return { message: 'Password changed successfully' };
   }
 
   async getMe(userId: number): Promise<UserPayload> {
