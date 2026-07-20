@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.10.0] - 2026-07-20
+
+### Added
+- Self-service password change endpoint (`PATCH /auth/change-password`), requiring the current password before setting a new one.
+
 ## [1.9.0] - 2026-07-20
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "record-management-service",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Record Management Service API",
   "dependencies": {
     "@nestjs/common": "^11.1.13",
