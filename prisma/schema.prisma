@@ -313,6 +313,7 @@ model OtherDocumentType {
   Type String @unique @db.VarChar(100) @map("type")
 
   OtherDocuments OtherDocument[]
+  Communications Communication[]
 
   @@map("other_document_type")
 }
@@ -350,6 +351,7 @@ model OtherDocument {
 model Communication {
   Id              Int         @id @default(autoincrement()) @map("comm_id")
   Type            String      @db.VarChar(20) @map("type")
+  DocumentTypeId  Int?        @map("document_type_id")
   ReferenceNumber String      @db.VarChar(50) @map("reference_number")
   Subject         String      @db.VarChar(500) @map("subject")
   Description     String?     @db.Text @map("description")
@@ -367,9 +369,10 @@ model Communication {
   ArchivedById    Int?        @map("archived_by")
   ShelfItemId     Int?        @map("shelf_item_id")
 
-  CreatedBy       Users       @relation("CommCreatedBy", fields: [CreatedById], references: [Id])
-  ArchivedBy      Users?      @relation("CommArchivedBy", fields: [ArchivedById], references: [Id])
-  ShelfItem       ShelfItem?  @relation(fields: [ShelfItemId], references: [Id])
+  CreatedBy       Users              @relation("CommCreatedBy", fields: [CreatedById], references: [Id])
+  ArchivedBy      Users?             @relation("CommArchivedBy", fields: [ArchivedById], references: [Id])
+  ShelfItem       ShelfItem?         @relation(fields: [ShelfItemId], references: [Id])
+  DocumentType    OtherDocumentType? @relation(fields: [DocumentTypeId], references: [Id])
   Images          CommImage[]
   Actions         CommAction[]
 
@@ -377,6 +380,7 @@ model Communication {
   @@index([Status])
   @@index([CreatedById])
   @@index([DateReceived])
+  @@index([DocumentTypeId])
   @@map("communications")
 }
 

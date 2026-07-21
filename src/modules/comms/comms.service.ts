@@ -13,6 +13,7 @@ const userSelect = { Id: true, FirstName: true, LastName: true };
 const commInclude = {
   CreatedBy: { select: userSelect },
   ArchivedBy: { select: userSelect },
+  DocumentType: { select: { Id: true, Type: true } },
   ShelfItem: {
     include: {
       Shelf: {
@@ -93,6 +94,9 @@ export class CommsService {
       archivedAt: comm.ArchivedAt?.toISOString() || null,
       archivedBy: comm.ArchivedBy
         ? { id: comm.ArchivedBy.Id, firstName: comm.ArchivedBy.FirstName, lastName: comm.ArchivedBy.LastName }
+        : null,
+      documentType: comm.DocumentType
+        ? { id: comm.DocumentType.Id, type: comm.DocumentType.Type }
         : null,
       shelfItem: comm.ShelfItem
         ? {
@@ -226,6 +230,7 @@ export class CommsService {
         DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
         DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
         Priority: dto.priority || 'normal',
+        DocumentTypeId: dto.documentTypeId || null,
         CreatedById: userId,
         Actions: dto.actions?.length
           ? {
@@ -277,6 +282,7 @@ export class CommsService {
     if (dto.dateSent !== undefined) updateData.DateSent = dto.dateSent ? new Date(dto.dateSent) : null;
     if (dto.priority) updateData.Priority = dto.priority;
     if (dto.status) updateData.Status = dto.status;
+    if (dto.documentTypeId !== undefined) updateData.DocumentTypeId = dto.documentTypeId || null;
 
     if (dto.actions) {
       const incomingIds = dto.actions.filter((a) => a.id).map((a) => a.id!);
