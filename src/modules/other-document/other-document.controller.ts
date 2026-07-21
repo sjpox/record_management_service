@@ -20,6 +20,7 @@ import { UpdateOtherDocumentDto } from './dto/update-other-document.dto';
 import { OtherDocumentQueryDto } from './dto/other-document-query.dto';
 import { UpdateOtherDocumentPhotosDto } from './dto/update-photos.dto';
 import { CreateDocumentTypeDto, UpdateDocumentTypeDto } from './dto/document-type.dto';
+import { ComposePdfDto } from '../vouchers/dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -114,6 +115,17 @@ export class OtherDocumentController {
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
     return this.service.updatePhotos(id, user.Id, dto.deletePhotoIds, files);
+  }
+
+  @Post(':id/compose-pdf')
+  @ApiOperation({ summary: 'Compose other document images into a PDF for printing' })
+  composePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('color') color?: string,
+    @Body() dto?: ComposePdfDto,
+  ) {
+    const isBlackAndWhite = color === 'bw';
+    return this.service.composeDocument(id, isBlackAndWhite, false, dto?.imageIds ?? [], dto?.crops);
   }
 
   @Delete(':id')

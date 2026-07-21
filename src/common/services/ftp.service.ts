@@ -476,12 +476,19 @@ export class FtpService {
             pipeline = pipeline.rotate(entry.rotate);
           }
           if (entry.crop) {
-            pipeline = pipeline.extract({
-              left: Math.round(entry.crop.left),
-              top: Math.round(entry.crop.top),
-              width: Math.round(entry.crop.width),
-              height: Math.round(entry.crop.height),
-            });
+            // Crop coordinates are relative to the post-rotation image; rotating
+            // by 90/270 swaps width/height, so re-check bounds against the
+            // rotated buffer to avoid an out-of-range extract area.
+            const rotatedMeta = await pipeline.clone().toBuffer({ resolveWithObject: true });
+            const rotatedWidth = rotatedMeta.info.width;
+            const rotatedHeight = rotatedMeta.info.height;
+
+            const left = Math.max(0, Math.round(entry.crop.left));
+            const top = Math.max(0, Math.round(entry.crop.top));
+            const width = Math.max(1, Math.min(Math.round(entry.crop.width), rotatedWidth - left));
+            const height = Math.max(1, Math.min(Math.round(entry.crop.height), rotatedHeight - top));
+
+            pipeline = sharp(rotatedMeta.data).extract({ left, top, width, height });
           }
           pipeline = pipeline.resize({ width: 1200, withoutEnlargement: true });
           if (isBlackAndWhite) pipeline = pipeline.grayscale();
