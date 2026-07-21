@@ -456,7 +456,7 @@ export class FtpService {
   /**
    * Compose multiple image buffers into a single PDF
    */
-  async composeToPdf(imageEntries: ImageEntry[], isBlackAndWhite = false, isScanEffect = false): Promise<Buffer> {
+  async composeToPdf(imageEntries: ImageEntry[], isBlackAndWhite = false, isScanEffect = false, watermark?: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const chunks: Buffer[] = [];
@@ -515,6 +515,26 @@ export class FtpService {
 
           doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
           doc.image(enhanced, x, y, { width: fitWidth, height: fitHeight });
+
+          if (watermark) {
+            const label = watermark.toUpperCase();
+            const fontSize = 72;
+            const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
+            doc.save();
+            doc.translate(pageWidth / 2, pageHeight / 2);
+            doc.rotate(-45);
+            doc.font('Helvetica-Bold').fontSize(fontSize);
+            doc.fillColor('red').fillOpacity(0.25);
+            // Repeat the watermark text across the diagonal strip
+            const textWidth = doc.widthOfString(label);
+            const gap = textWidth * 1.5;
+            const count = Math.ceil(diagonal / gap) + 2;
+            const startX = -((count * gap) / 2);
+            for (let i = 0; i < count; i++) {
+              doc.text(label, startX + i * gap, -fontSize / 2, { lineBreak: false });
+            }
+            doc.restore();
+          }
         }
         doc.end();
       };

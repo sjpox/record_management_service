@@ -861,6 +861,7 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     isBlackAndWhite = false,
     imageIds: number[] = [],
     crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
+    watermark?: boolean,
   ): Promise<{ fileType: string; fileSize: number; base64: string }> {
     const comm = await this.prisma.communication.findUnique({
       where: { Id: id },
@@ -898,7 +899,7 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false, watermark ? 'COPY' : undefined);
     return {
       fileType: 'pdf',
       fileSize: pdfBuffer.length,

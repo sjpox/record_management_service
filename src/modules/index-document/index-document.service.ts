@@ -454,6 +454,7 @@ export class IndexDocumentService {
     isScanEffect = false,
     imageIds: number[] = [],
     crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
+    watermark?: boolean,
   ): Promise<{
     fileType: string;
     fileSize: number;
@@ -497,7 +498,7 @@ export class IndexDocumentService {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'COPY' : undefined);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {

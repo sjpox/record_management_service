@@ -151,7 +151,7 @@ export class VouchersController {
   ) {
     const isBlackAndWhite = color === 'bw';
     const isScanEffect = scanEffect === 'true';
-    return this.service.composeDocument(id, isBlackAndWhite, isScanEffect, dto?.imageIds ?? [], dto?.crops);
+    return this.service.composeDocument(id, isBlackAndWhite, isScanEffect, dto?.imageIds ?? [], dto?.crops, dto?.watermark);
   }
 
   @Post(':id/archive')
