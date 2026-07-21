@@ -16,6 +16,10 @@ export class CropArea {
 
   @IsNumber()
   height: number;
+
+  @IsOptional()
+  @IsNumber()
+  rotate?: number;
 }
 
 export class ComposePdfDto {

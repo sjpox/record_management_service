@@ -8,6 +8,7 @@ import PDFDocument from 'pdfkit';
 export interface ImageEntry {
   buffer: Buffer;
   crop?: { left: number; top: number; width: number; height: number };
+  rotate?: number;
 }
 
 export interface UploadResult {
@@ -469,8 +470,11 @@ export class FtpService {
         const pageHeight = 842;
 
         for (const entry of imageEntries) {
-          // Crop if specified, then resize and apply effects
+          // Rotate if specified, then crop, then resize and apply effects
           let pipeline = sharp(entry.buffer);
+          if (entry.rotate) {
+            pipeline = pipeline.rotate(entry.rotate);
+          }
           if (entry.crop) {
             pipeline = pipeline.extract({
               left: Math.round(entry.crop.left),
