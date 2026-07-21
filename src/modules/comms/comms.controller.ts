@@ -129,7 +129,7 @@ export class CommsController {
   }
 
   @Post(':id/photos')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 40))
   uploadImages(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -155,7 +155,7 @@ export class CommsController {
   }
 
   @Post('actions/:actionId/replies')
-  @UseInterceptors(FilesInterceptor('photos', 20))
+  @UseInterceptors(FilesInterceptor('photos', 40))
   addReply(
     @CurrentUser() user: { Id: number },
     @Param('actionId', ParseIntPipe) actionId: number,
