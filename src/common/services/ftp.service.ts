@@ -8,6 +8,7 @@ import PDFDocument from 'pdfkit';
 export interface ImageEntry {
   buffer: Buffer;
   crop?: { left: number; top: number; width: number; height: number };
+  rotate?: number;
 }
 
 export interface UploadResult {
@@ -455,7 +456,7 @@ export class FtpService {
   /**
    * Compose multiple image buffers into a single PDF
    */
-  async composeToPdf(imageEntries: ImageEntry[], isBlackAndWhite = false, isScanEffect = false): Promise<Buffer> {
+  async composeToPdf(imageEntries: ImageEntry[], isBlackAndWhite = false, isScanEffect = false, watermark?: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
       const chunks: Buffer[] = [];
@@ -469,15 +470,25 @@ export class FtpService {
         const pageHeight = 842;
 
         for (const entry of imageEntries) {
-          // Crop if specified, then resize and apply effects
+          // Rotate if specified, then crop, then resize and apply effects
           let pipeline = sharp(entry.buffer);
+          if (entry.rotate) {
+            pipeline = pipeline.rotate(entry.rotate);
+          }
           if (entry.crop) {
-            pipeline = pipeline.extract({
-              left: Math.round(entry.crop.left),
-              top: Math.round(entry.crop.top),
-              width: Math.round(entry.crop.width),
-              height: Math.round(entry.crop.height),
-            });
+            // Crop coordinates are relative to the post-rotation image; rotating
+            // by 90/270 swaps width/height, so re-check bounds against the
+            // rotated buffer to avoid an out-of-range extract area.
+            const rotatedMeta = await pipeline.clone().toBuffer({ resolveWithObject: true });
+            const rotatedWidth = rotatedMeta.info.width;
+            const rotatedHeight = rotatedMeta.info.height;
+
+            const left = Math.max(0, Math.round(entry.crop.left));
+            const top = Math.max(0, Math.round(entry.crop.top));
+            const width = Math.max(1, Math.min(Math.round(entry.crop.width), rotatedWidth - left));
+            const height = Math.max(1, Math.min(Math.round(entry.crop.height), rotatedHeight - top));
+
+            pipeline = sharp(rotatedMeta.data).extract({ left, top, width, height });
           }
           pipeline = pipeline.resize({ width: 1200, withoutEnlargement: true });
           if (isBlackAndWhite) pipeline = pipeline.grayscale();
@@ -504,6 +515,26 @@ export class FtpService {
 
           doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
           doc.image(enhanced, x, y, { width: fitWidth, height: fitHeight });
+
+          if (watermark) {
+            const label = watermark.toUpperCase();
+            const fontSize = 72;
+            const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
+            doc.save();
+            doc.translate(pageWidth / 2, pageHeight / 2);
+            doc.rotate(-45);
+            doc.font('Helvetica-Bold').fontSize(fontSize);
+            doc.fillColor('red').fillOpacity(0.25);
+            // Repeat the watermark text across the diagonal strip
+            const textWidth = doc.widthOfString(label);
+            const gap = textWidth * 1.5;
+            const count = Math.ceil(diagonal / gap) + 2;
+            const startX = -((count * gap) / 2);
+            for (let i = 0; i < count; i++) {
+              doc.text(label, startX + i * gap, -fontSize / 2, { lineBreak: false });
+            }
+            doc.restore();
+          }
         }
         doc.end();
       };

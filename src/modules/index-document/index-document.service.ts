@@ -453,7 +453,8 @@ export class IndexDocumentService {
     isBlackAndWhite = false,
     isScanEffect = false,
     imageIds: number[] = [],
-    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
+    watermark?: boolean,
   ): Promise<{
     fileType: string;
     fileSize: number;
@@ -477,18 +478,19 @@ export class IndexDocumentService {
     const filePaths = selectedImages.map((img) => img.ImageFile);
     const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
 
-    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
     if (crops) {
       for (const crop of crops) {
-        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height, rotate: crop.rotate });
       }
     }
 
-    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
     for (const img of selectedImages) {
       const buffer = downloadedFiles.get(img.ImageFile);
       if (buffer) {
-        imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+        const entry = cropMap.get(img.Id);
+        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
       }
     }
 
@@ -496,7 +498,7 @@ export class IndexDocumentService {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'COPY' : undefined);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {

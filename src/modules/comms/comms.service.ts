@@ -13,6 +13,7 @@ const userSelect = { Id: true, FirstName: true, LastName: true };
 const commInclude = {
   CreatedBy: { select: userSelect },
   ArchivedBy: { select: userSelect },
+  DocumentType: { select: { Id: true, Type: true } },
   ShelfItem: {
     include: {
       Shelf: {
@@ -93,6 +94,9 @@ export class CommsService {
       archivedAt: comm.ArchivedAt?.toISOString() || null,
       archivedBy: comm.ArchivedBy
         ? { id: comm.ArchivedBy.Id, firstName: comm.ArchivedBy.FirstName, lastName: comm.ArchivedBy.LastName }
+        : null,
+      documentType: comm.DocumentType
+        ? { id: comm.DocumentType.Id, type: comm.DocumentType.Type }
         : null,
       shelfItem: comm.ShelfItem
         ? {
@@ -226,6 +230,7 @@ export class CommsService {
         DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
         DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
         Priority: dto.priority || 'normal',
+        DocumentTypeId: dto.documentTypeId || null,
         CreatedById: userId,
         Actions: dto.actions?.length
           ? {
@@ -277,6 +282,7 @@ export class CommsService {
     if (dto.dateSent !== undefined) updateData.DateSent = dto.dateSent ? new Date(dto.dateSent) : null;
     if (dto.priority) updateData.Priority = dto.priority;
     if (dto.status) updateData.Status = dto.status;
+    if (dto.documentTypeId !== undefined) updateData.DocumentTypeId = dto.documentTypeId || null;
 
     if (dto.actions) {
       const incomingIds = dto.actions.filter((a) => a.id).map((a) => a.id!);
@@ -428,7 +434,13 @@ export class CommsService {
   }
 
   async toggleActionStatus(actionId: number, userId: number) {
-    const action = await this.prisma.commAction.findUnique({ where: { Id: actionId } });
+    const action = await this.prisma.commAction.findUnique({
+      where: { Id: actionId },
+      include: {
+        Assignees: true,
+        Communication: { select: { Id: true, ReferenceNumber: true, Subject: true, CreatedById: true } },
+      },
+    });
     if (!action) throw new NotFoundException('Action not found');
 
     // Cycle: pending → in-progress → completed → pending
@@ -455,6 +467,27 @@ export class CommsService {
 
     const auditAction = isCompleting ? 'complete' : nextStatus === 'in-progress' ? 'start' : 'reopen';
     await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: auditAction, userId });
+
+    // Notify all assignees + comm creator about the status change (except the person who toggled)
+    const statusLabel = nextStatus === 'in-progress' ? 'In Progress' : nextStatus === 'completed' ? 'Completed' : 'Reopened';
+    const notifyUserIds = new Set<number>();
+    for (const assignee of action.Assignees) {
+      if (assignee.UserId) notifyUserIds.add(assignee.UserId);
+    }
+    if (action.Communication.CreatedById) notifyUserIds.add(action.Communication.CreatedById);
+    notifyUserIds.delete(userId);
+
+    for (const uid of notifyUserIds) {
+      await this.notifications.notify({
+        userId: uid,
+        type: 'comm_action_status',
+        title: `Action item marked as ${statusLabel}`,
+        body: `[${action.Communication.ReferenceNumber}] ${action.Communication.Subject}: ${action.ActionRequired}`,
+        entityType: 'Communication',
+        entityId: action.Communication.Id,
+      });
+    }
+
     return this.getDetails(action.CommunicationId);
   }
 
@@ -847,6 +880,36 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     };
 
     await this.audit.log({ entityType: 'CommActionReply', entityId: result.id, action: 'create', userId, changes: { after: { actionId, content: content?.trim() || null } } });
+
+    // Notify all other assignees on this action that a reply was posted
+    const fullAction = await this.prisma.commAction.findUnique({
+      where: { Id: actionId },
+      include: {
+        Assignees: true,
+        Communication: { select: { Id: true, ReferenceNumber: true, Subject: true, CreatedById: true } },
+      },
+    });
+    if (fullAction) {
+      const notifyUserIds = new Set<number>();
+      for (const assignee of fullAction.Assignees) {
+        if (assignee.UserId) notifyUserIds.add(assignee.UserId);
+      }
+      if (fullAction.Communication.CreatedById) notifyUserIds.add(fullAction.Communication.CreatedById);
+      notifyUserIds.delete(userId);
+
+      const snippet = content?.trim() ? (content.trim().length > 60 ? content.trim().slice(0, 60) + '…' : content.trim()) : 'sent an image';
+      for (const uid of notifyUserIds) {
+        await this.notifications.notify({
+          userId: uid,
+          type: 'comm_action_reply',
+          title: 'New reply on an action item',
+          body: `[${fullAction.Communication.ReferenceNumber}] ${fullAction.ActionRequired}: ${snippet}`,
+          entityType: 'Communication',
+          entityId: fullAction.Communication.Id,
+        });
+      }
+    }
+
     return result;
   }
 
@@ -854,7 +917,8 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     id: number,
     isBlackAndWhite = false,
     imageIds: number[] = [],
-    crops?: { imageId: number; left: number; top: number; width: number; height: number }[],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
+    watermark?: boolean,
   ): Promise<{ fileType: string; fileSize: number; base64: string }> {
     const comm = await this.prisma.communication.findUnique({
       where: { Id: id },
@@ -873,23 +937,26 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     const filePaths = selectedImages.map((img) => img.ImageFile);
     const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
 
-    const cropMap = new Map<number, { left: number; top: number; width: number; height: number }>();
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
     if (crops) {
       for (const crop of crops) {
-        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height });
+        cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height, rotate: crop.rotate });
       }
     }
-    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number } }[] = [];
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
     for (const img of selectedImages) {
       const buffer = downloadedFiles.get(img.ImageFile);
-      if (buffer) imageEntries.push({ buffer, crop: cropMap.get(img.Id) });
+      if (buffer) {
+        const entry = cropMap.get(img.Id);
+        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+      }
     }
 
     if (imageEntries.length === 0) {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false, watermark ? 'COPY' : undefined);
     return {
       fileType: 'pdf',
       fileSize: pdfBuffer.length,

@@ -1,4 +1,4 @@
-import { IsOptional, IsArray, ValidateNested, IsNumber } from 'class-validator';
+import { IsOptional, IsArray, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CropArea {
@@ -16,6 +16,10 @@ export class CropArea {
 
   @IsNumber()
   height: number;
+
+  @IsOptional()
+  @IsNumber()
+  rotate?: number;
 }
 
 export class ComposePdfDto {
@@ -28,4 +32,8 @@ export class ComposePdfDto {
   @ValidateNested({ each: true })
   @Type(() => CropArea)
   crops?: CropArea[];
+
+  @IsOptional()
+  @IsBoolean()
+  watermark?: boolean;
 }

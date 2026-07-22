@@ -568,4 +568,60 @@ export class OtherDocumentService {
       throw error;
     }
   }
+
+  async composeDocument(
+    id: number,
+    isBlackAndWhite = false,
+    isScanEffect = false,
+    imageIds: number[] = [],
+    crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
+    watermark?: boolean,
+  ): Promise<{ fileType: string; fileSize: number; base64: string }> {
+    const document = await this.prisma.otherDocument.findUnique({
+      where: { Id: id },
+      include: { DocumentImages: true },
+    });
+
+    if (!document) throw new NotFoundException(`Other document with ID ${id} not found`);
+
+    const selectedImages = imageIds.length > 0
+      ? document.DocumentImages.filter((img) => imageIds.includes(img.Id))
+      : document.DocumentImages;
+
+    if (selectedImages.length === 0) {
+      throw new BadRequestException('No images found for the selected IDs');
+    }
+
+    const filePaths = selectedImages.map((img) => img.ImageFile);
+    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+
+    const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
+    if (crops) {
+      for (const crop of crops) {
+        cropMap.set(crop.imageId, crop);
+      }
+    }
+
+    const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
+    for (const img of selectedImages) {
+      const buffer = downloadedFiles.get(img.ImageFile);
+      if (buffer) {
+        const entry = cropMap.get(img.Id);
+        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+      }
+    }
+
+    if (imageEntries.length === 0) {
+      throw new BadRequestException('Failed to download images for PDF composition');
+    }
+
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'COPY' : undefined);
+    const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
+
+    return {
+      fileType: 'pdf',
+      fileSize: pdfBuffer.length,
+      base64,
+    };
+  }
 }

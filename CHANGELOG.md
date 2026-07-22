@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0] - 2026-07-22
+
+### Added
+- Password strength criteria enforced when changing password.
+- Document type field on communications.
+- Rotate support for images in PDF composition (vouchers, communications, other documents, index documents), alongside existing crop support.
+- Optional watermark on composed PDFs — `composeToPdf` accepts a `watermark` string; when set, a diagonal semi-transparent "COPY" label is drawn on every page via PDFKit. `ComposePdfDto` extended with `watermark?: boolean`; all four compose-pdf endpoints (vouchers, communications, index documents, other documents) forward it through the service layer.
+- Action item status change notifications — `toggleActionStatus` notifies all assignees and the communication creator when status changes (in-progress, completed, reopened), excluding the user who triggered it.
+- Action item reply notifications — `addReply` notifies all assignees and the communication creator when a new reply is posted, excluding the sender.
+
+### Fixed
+- Raised the max photo upload count for communications to 40.
+- Fixed PDF composition producing a misaligned/incorrect image when both crop and rotate were applied — rotation is now applied before the crop is measured and clamped to the rotated image's bounds.
+
 ## [1.10.0] - 2026-07-20
 
 ### Added

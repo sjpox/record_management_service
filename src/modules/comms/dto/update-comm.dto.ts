@@ -102,9 +102,14 @@ export class UpdateCommDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  documentTypeId?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ActionDto)
   actions?: ActionDto[];
-
 }
