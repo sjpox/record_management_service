@@ -434,7 +434,13 @@ export class CommsService {
   }
 
   async toggleActionStatus(actionId: number, userId: number) {
-    const action = await this.prisma.commAction.findUnique({ where: { Id: actionId } });
+    const action = await this.prisma.commAction.findUnique({
+      where: { Id: actionId },
+      include: {
+        Assignees: true,
+        Communication: { select: { Id: true, ReferenceNumber: true, Subject: true, CreatedById: true } },
+      },
+    });
     if (!action) throw new NotFoundException('Action not found');
 
     // Cycle: pending → in-progress → completed → pending
@@ -461,6 +467,27 @@ export class CommsService {
 
     const auditAction = isCompleting ? 'complete' : nextStatus === 'in-progress' ? 'start' : 'reopen';
     await this.audit.log({ entityType: 'CommAction', entityId: actionId, action: auditAction, userId });
+
+    // Notify all assignees + comm creator about the status change (except the person who toggled)
+    const statusLabel = nextStatus === 'in-progress' ? 'In Progress' : nextStatus === 'completed' ? 'Completed' : 'Reopened';
+    const notifyUserIds = new Set<number>();
+    for (const assignee of action.Assignees) {
+      if (assignee.UserId) notifyUserIds.add(assignee.UserId);
+    }
+    if (action.Communication.CreatedById) notifyUserIds.add(action.Communication.CreatedById);
+    notifyUserIds.delete(userId);
+
+    for (const uid of notifyUserIds) {
+      await this.notifications.notify({
+        userId: uid,
+        type: 'comm_action_status',
+        title: `Action item marked as ${statusLabel}`,
+        body: `[${action.Communication.ReferenceNumber}] ${action.Communication.Subject}: ${action.ActionRequired}`,
+        entityType: 'Communication',
+        entityId: action.Communication.Id,
+      });
+    }
+
     return this.getDetails(action.CommunicationId);
   }
 
@@ -853,6 +880,36 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     };
 
     await this.audit.log({ entityType: 'CommActionReply', entityId: result.id, action: 'create', userId, changes: { after: { actionId, content: content?.trim() || null } } });
+
+    // Notify all other assignees on this action that a reply was posted
+    const fullAction = await this.prisma.commAction.findUnique({
+      where: { Id: actionId },
+      include: {
+        Assignees: true,
+        Communication: { select: { Id: true, ReferenceNumber: true, Subject: true, CreatedById: true } },
+      },
+    });
+    if (fullAction) {
+      const notifyUserIds = new Set<number>();
+      for (const assignee of fullAction.Assignees) {
+        if (assignee.UserId) notifyUserIds.add(assignee.UserId);
+      }
+      if (fullAction.Communication.CreatedById) notifyUserIds.add(fullAction.Communication.CreatedById);
+      notifyUserIds.delete(userId);
+
+      const snippet = content?.trim() ? (content.trim().length > 60 ? content.trim().slice(0, 60) + '…' : content.trim()) : 'sent an image';
+      for (const uid of notifyUserIds) {
+        await this.notifications.notify({
+          userId: uid,
+          type: 'comm_action_reply',
+          title: 'New reply on an action item',
+          body: `[${fullAction.Communication.ReferenceNumber}] ${fullAction.ActionRequired}: ${snippet}`,
+          entityType: 'Communication',
+          entityId: fullAction.Communication.Id,
+        });
+      }
+    }
+
     return result;
   }
 
