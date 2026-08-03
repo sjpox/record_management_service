@@ -23,33 +23,39 @@ import { CreateDocumentTypeDto, UpdateDocumentTypeDto } from './dto/document-typ
 import { ComposePdfDto } from '../vouchers/dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 
 @ApiTags('Other Documents')
 @ApiBearerAuth()
 @Controller('other-documents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class OtherDocumentController {
   constructor(private readonly service: OtherDocumentService) {}
 
   @Get()
+  @RequirePermission('other-documents', 'read')
   @ApiOperation({ summary: 'Get all other documents with pagination and filters' })
   findAll(@Query() query: OtherDocumentQueryDto) {
     return this.service.findAll(query);
   }
 
   @Get('document-types')
+  @RequirePermission('document-types', 'read')
   @ApiOperation({ summary: 'Get all other document types' })
   getDocumentTypes() {
     return this.service.getDocumentTypes();
   }
 
   @Post('document-types')
+  @RequirePermission('document-types', 'write')
   @ApiOperation({ summary: 'Create a new document type' })
   createDocumentType(@Body() dto: CreateDocumentTypeDto) {
     return this.service.createDocumentType(dto);
   }
 
   @Put('document-types/:typeId')
+  @RequirePermission('document-types', 'write')
   @ApiOperation({ summary: 'Update a document type' })
   updateDocumentType(
     @Param('typeId', ParseIntPipe) typeId: number,
@@ -59,30 +65,35 @@ export class OtherDocumentController {
   }
 
   @Delete('document-types/:typeId')
+  @RequirePermission('document-types', 'write')
   @ApiOperation({ summary: 'Delete a document type' })
   removeDocumentType(@Param('typeId', ParseIntPipe) typeId: number) {
     return this.service.deleteDocumentType(typeId);
   }
 
   @Get(':id')
+  @RequirePermission('other-documents', 'read')
   @ApiOperation({ summary: 'Get an other document by ID' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Get(':id/details')
+  @RequirePermission('other-documents', 'read')
   @ApiOperation({ summary: 'Get an other document with photos' })
   findOneWithPhotos(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOneWithPhotos(id);
   }
 
   @Get(':id/photos')
+  @RequirePermission('other-documents', 'read')
   @ApiOperation({ summary: 'Get photos for an other document' })
   getPhotos(@Param('id', ParseIntPipe) id: number) {
     return this.service.getPhotos(id);
   }
 
   @Post()
+  @RequirePermission('other-documents', 'write')
   @ApiOperation({ summary: 'Create a new other document with optional photos' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 100))
@@ -95,6 +106,7 @@ export class OtherDocumentController {
   }
 
   @Put(':id')
+  @RequirePermission('other-documents', 'write')
   @ApiOperation({ summary: 'Update an other document' })
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -105,6 +117,7 @@ export class OtherDocumentController {
   }
 
   @Put(':id/photos')
+  @RequirePermission('other-documents', 'write')
   @ApiOperation({ summary: 'Update photos for an other document' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 100))
@@ -118,6 +131,7 @@ export class OtherDocumentController {
   }
 
   @Post(':id/compose-pdf')
+  @RequirePermission('other-documents', 'read')
   @ApiOperation({ summary: 'Compose other document images into a PDF for printing' })
   composePdf(
     @Param('id', ParseIntPipe) id: number,
@@ -129,6 +143,7 @@ export class OtherDocumentController {
   }
 
   @Delete(':id')
+  @RequirePermission('other-documents', 'write')
   @ApiOperation({ summary: 'Delete an other document' })
   remove(
     @Param('id', ParseIntPipe) id: number,

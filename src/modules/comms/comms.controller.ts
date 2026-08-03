@@ -3,6 +3,8 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { CommsService } from './comms.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
@@ -10,7 +12,8 @@ import { ArchiveCommDto } from './dto/archive-comm.dto';
 
 @ApiTags('Communications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission('comms', 'read')
 @Controller('comms')
 export class CommsController {
   constructor(private readonly commsService: CommsService) {}
@@ -48,12 +51,13 @@ export class CommsController {
     return this.commsService.getStats(user.Id, user.Role);
   }
 
-@Get(':id')
+  @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.commsService.findOne(id);
   }
 
   @Post()
+  @RequirePermission('comms', 'write')
   create(
     @CurrentUser() user: { Id: number },
     @Body() dto: CreateCommDto,
@@ -62,6 +66,7 @@ export class CommsController {
   }
 
   @Put(':id')
+  @RequirePermission('comms', 'write')
   update(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -71,6 +76,7 @@ export class CommsController {
   }
 
   @Delete(':id')
+  @RequirePermission('comms', 'write')
   remove(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -79,6 +85,7 @@ export class CommsController {
   }
 
   @Post(':id/archive')
+  @RequirePermission('comms', 'write')
   archive(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -88,6 +95,7 @@ export class CommsController {
   }
 
   @Put(':id/shelf')
+  @RequirePermission('comms', 'write')
   updateShelf(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -97,6 +105,7 @@ export class CommsController {
   }
 
   @Post(':id/unarchive')
+  @RequirePermission('comms', 'write')
   unarchive(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -105,6 +114,7 @@ export class CommsController {
   }
 
   @Post('actions/:actionId/toggle')
+  @RequirePermission('comms', 'write')
   toggleAction(
     @CurrentUser() user: { Id: number },
     @Param('actionId', ParseIntPipe) actionId: number,
@@ -129,6 +139,7 @@ export class CommsController {
   }
 
   @Post(':id/photos')
+  @RequirePermission('comms', 'write')
   @UseInterceptors(FilesInterceptor('photos', 40))
   uploadImages(
     @CurrentUser() user: { Id: number },
@@ -139,6 +150,7 @@ export class CommsController {
   }
 
   @Post(':id/photos/delete')
+  @RequirePermission('comms', 'write')
   deleteImages(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -155,6 +167,7 @@ export class CommsController {
   }
 
   @Post('actions/:actionId/replies')
+  @RequirePermission('comms', 'write')
   @UseInterceptors(FilesInterceptor('photos', 40))
   addReply(
     @CurrentUser() user: { Id: number },
@@ -166,6 +179,7 @@ export class CommsController {
   }
 
   @Delete('replies/:replyId')
+  @RequirePermission('comms', 'write')
   deleteReply(
     @CurrentUser() user: { Id: number },
     @Param('replyId', ParseIntPipe) replyId: number,

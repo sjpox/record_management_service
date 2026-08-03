@@ -4,12 +4,14 @@ import { VoucherAgeingService } from './voucher-ageing.service';
 import { SetThresholdDto } from './dto/set-threshold.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuditService } from '../audit/audit.service';
 
 @ApiTags('Voucher Ageing')
 @ApiBearerAuth()
 @Controller('voucher-ageing')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class VoucherAgeingController {
   constructor(
     private readonly service: VoucherAgeingService,
@@ -17,6 +19,7 @@ export class VoucherAgeingController {
   ) {}
 
   @Get('config')
+  @RequirePermission('voucher-ageing', 'read')
   @ApiOperation({ summary: 'Get current voucher ageing threshold configuration' })
   async getConfig() {
     const config = await this.service.getConfig();
@@ -27,6 +30,7 @@ export class VoucherAgeingController {
   }
 
   @Put('config')
+  @RequirePermission('voucher-ageing', 'write')
   @ApiOperation({ summary: 'Update voucher ageing threshold (admin only)' })
   async setThreshold(
     @Body() dto: SetThresholdDto,

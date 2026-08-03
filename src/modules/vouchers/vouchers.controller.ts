@@ -23,11 +23,14 @@ import { UpdatePhotosDto } from './dto/update-photos.dto';
 import { ComposePdfDto } from './dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 
 @ApiTags('Vouchers')
 @ApiBearerAuth()
 @Controller('vouchers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission('vouchers', 'read')
 export class VouchersController {
   constructor(private readonly service: VouchersService) {}
 
@@ -73,6 +76,7 @@ export class VouchersController {
   }
 
   @Post()
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Create a new voucher with optional photos' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 20))
@@ -85,6 +89,7 @@ export class VouchersController {
   }
 
   @Put(':id')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Update a voucher' })
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -101,6 +106,7 @@ export class VouchersController {
   }
 
   @Put(':id/photos')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Update photos for a voucher' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 20))
@@ -114,6 +120,7 @@ export class VouchersController {
   }
 
   @Post(':id/unarchive')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Unarchive a voucher' })
   unarchive(
     @Param('id', ParseIntPipe) id: number,
@@ -123,6 +130,7 @@ export class VouchersController {
   }
 
   @Delete(':id')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Delete a voucher from source pool and log the deletion' })
   deleteFromSourcePool(
     @Param('id', ParseIntPipe) id: number,
@@ -133,6 +141,7 @@ export class VouchersController {
   }
 
   @Post('bulk')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Bulk create vouchers' })
   bulkCreate(
     @Body() dto: BulkCreateVoucherDto,
@@ -155,6 +164,7 @@ export class VouchersController {
   }
 
   @Post(':id/archive')
+  @RequirePermission('vouchers', 'write')
   @ApiOperation({ summary: 'Archive a voucher with optional photos' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 20))

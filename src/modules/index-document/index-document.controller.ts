@@ -22,11 +22,14 @@ import { UpdateIndexDocumentPhotosDto } from './dto/update-photos.dto';
 import { ComposePdfDto } from '../vouchers/dto/compose-pdf.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 
 @ApiTags('Index Documents')
 @ApiBearerAuth()
 @Controller('index-documents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission('index-documents', 'read')
 export class IndexDocumentController {
   constructor(private readonly service: IndexDocumentService) {}
 
@@ -55,6 +58,7 @@ export class IndexDocumentController {
   }
 
   @Post()
+  @RequirePermission('index-documents', 'write')
   @ApiOperation({ summary: 'Create a new index document with optional photos' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 100))
@@ -67,6 +71,7 @@ export class IndexDocumentController {
   }
 
   @Put(':id')
+  @RequirePermission('index-documents', 'write')
   @ApiOperation({ summary: 'Update an index document' })
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -77,6 +82,7 @@ export class IndexDocumentController {
   }
 
   @Put(':id/photos')
+  @RequirePermission('index-documents', 'write')
   @ApiOperation({ summary: 'Update photos for an index document' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('photos', 100))
@@ -103,6 +109,7 @@ export class IndexDocumentController {
   }
 
   @Delete(':id')
+  @RequirePermission('index-documents', 'write')
   @ApiOperation({ summary: 'Delete an index document' })
   remove(
     @Param('id', ParseIntPipe) id: number,

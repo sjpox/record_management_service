@@ -568,6 +568,20 @@ model RecipientGroupMember {
   @@map("recipient_group_members")
 }
 
+// Dynamic Role Permissions
+model RolePermission {
+  Id        Int      @id @default(autoincrement()) @map("id")
+  Role      String   @db.VarChar(100) @map("role")
+  Resource  String   @db.VarChar(100) @map("resource")
+  Action    String   @db.VarChar(50) @map("action")
+  Allowed   Boolean  @default(true) @map("allowed")
+  UpdatedAt DateTime @default(now()) @updatedAt @db.DateTime @map("updated_at")
+
+  @@unique([Role, Resource, Action])
+  @@index([Role])
+  @@map("role_permissions")
+}
+
 // Announcements
 model Announcement {
   Id          Int       @id @default(autoincrement()) @map("announcement_id")

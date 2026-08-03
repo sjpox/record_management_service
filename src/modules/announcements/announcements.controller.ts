@@ -2,18 +2,21 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Pars
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AnnouncementsService } from './announcements.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 @ApiTags('Announcements')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('announcements')
 export class AnnouncementsController {
   constructor(private readonly announcementsService: AnnouncementsService) {}
 
   @Get()
+  @RequirePermission('announcements', 'read')
   findAll(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -35,11 +38,13 @@ export class AnnouncementsController {
   }
 
   @Get(':id')
+  @RequirePermission('announcements', 'read')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.announcementsService.findOne(id);
   }
 
   @Post()
+  @RequirePermission('announcements', 'write')
   create(
     @CurrentUser() user: { Id: number },
     @Body() dto: CreateAnnouncementDto,
@@ -48,6 +53,7 @@ export class AnnouncementsController {
   }
 
   @Put(':id')
+  @RequirePermission('announcements', 'write')
   update(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,
@@ -57,6 +63,7 @@ export class AnnouncementsController {
   }
 
   @Delete(':id')
+  @RequirePermission('announcements', 'write')
   remove(
     @CurrentUser() user: { Id: number },
     @Param('id', ParseIntPipe) id: number,

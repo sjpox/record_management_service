@@ -17,27 +17,32 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 import { LocationQueryDto } from './dto/location-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 
 @ApiTags('Locations')
 @ApiBearerAuth()
 @Controller('locations')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LocationController {
   constructor(private readonly service: LocationService) {}
 
   @Get()
+  @RequirePermission('locations', 'read')
   @ApiOperation({ summary: 'Get all locations with optional filters' })
   findAll(@Query() query: LocationQueryDto) {
     return this.service.findAll(query);
   }
 
   @Get(':id')
+  @RequirePermission('locations', 'read')
   @ApiOperation({ summary: 'Get a location by ID' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Post()
+  @RequirePermission('locations', 'write')
   @ApiOperation({ summary: 'Create a new location' })
   create(
     @Body() dto: CreateLocationDto,
@@ -47,6 +52,7 @@ export class LocationController {
   }
 
   @Put(':id')
+  @RequirePermission('locations', 'write')
   @ApiOperation({ summary: 'Update a location' })
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -57,6 +63,7 @@ export class LocationController {
   }
 
   @Delete(':id')
+  @RequirePermission('locations', 'write')
   @ApiOperation({ summary: 'Delete a location' })
   remove(
     @Param('id', ParseIntPipe) id: number,

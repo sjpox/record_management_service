@@ -3,13 +3,16 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { BackupService } from './backup.service';
 
 @ApiTags('Backup')
 @ApiBearerAuth()
 @Controller('backup')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission('backup', 'write')
 export class BackupController {
   constructor(
     private readonly backupService: BackupService,

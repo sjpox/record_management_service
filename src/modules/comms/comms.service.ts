@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
 import sharp from 'sharp';
@@ -43,6 +44,7 @@ export class CommsService {
     private readonly ftpService: FtpService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   private formatComm(comm: any) {
@@ -113,7 +115,7 @@ export class CommsService {
   }
 
   private async buildVisibilityFilter(userId: number, userRole?: string): Promise<any | null> {
-    if (userRole === 'admin') return null; // no filter — admin sees all
+    if (userRole && await this.permissions.isAllowed(userRole, 'comms', 'view-all')) return null;
 
     const user = await this.prisma.users.findUnique({
       where: { Id: userId },

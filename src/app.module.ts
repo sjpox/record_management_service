@@ -19,6 +19,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RecipientGroupsModule } from './modules/recipient-groups/recipient-groups.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { VoucherAgeingModule } from './modules/voucher-ageing/voucher-ageing.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
 
 @Module({
@@ -43,6 +44,7 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     RecipientGroupsModule,
     AnnouncementsModule,
     VoucherAgeingModule,
+    PermissionsModule,
   ],
 })
 export class AppModule implements NestModule {

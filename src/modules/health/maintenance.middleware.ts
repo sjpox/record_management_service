@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MaintenanceService } from './maintenance.service';
+import { PermissionsService } from '../permissions/permissions.service';
 
 @Injectable()
 export class MaintenanceMiddleware implements NestMiddleware {
@@ -10,6 +11,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
     private readonly maintenanceService: MaintenanceService,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -17,7 +19,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
       return next();
     }
 
-    // Allow admin users to bypass maintenance mode
+    // Allow roles with maintenance bypass permission
     const token = this.extractToken(req);
     if (token) {
       try {
@@ -27,7 +29,7 @@ export class MaintenanceMiddleware implements NestMiddleware {
           select: { Role: true, IsActive: true },
         });
 
-        if (user?.IsActive && user.Role === 'admin') {
+        if (user?.IsActive && user.Role && await this.permissions.isAllowed(user.Role, 'maintenance', 'bypass')) {
           return next();
         }
       } catch {

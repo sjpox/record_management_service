@@ -6,6 +6,8 @@ import { MaintenanceService } from './maintenance.service';
 import { AuditService } from '../audit/audit.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PermissionGuard } from '../permissions/permission.guard';
+import { RequirePermission } from '../permissions/require-permission.decorator';
 import { SetMaintenanceDto } from './dto/set-maintenance.dto';
 
 @ApiTags('Health')
@@ -48,7 +50,8 @@ export class HealthController {
   }
 
   @Post('maintenance')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequirePermission('maintenance', 'write')
   @ApiOperation({ summary: 'Toggle maintenance mode' })
   async setMaintenance(
     @Body() body: SetMaintenanceDto,
