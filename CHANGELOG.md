@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0] - 2026-08-03
+
+### Added
+- Role-based access control (RBAC): new `permissions` module with a `RolePermission` table, `RequirePermission` decorator, and `PermissionGuard` enforcing resource/action checks across nearly all controllers (comms, vouchers, users, locations, shelf-map, reports, health, index/other documents, voucher ageing, announcements).
+- Permissions admin endpoints for listing and updating role permissions.
+- `seed-permissions.ts` script to seed default role permissions (`npm run seed:permissions`).
+
 ## [1.11.0] - 2026-07-22
 
 ### Added
