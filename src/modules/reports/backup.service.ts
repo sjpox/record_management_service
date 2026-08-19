@@ -25,9 +25,41 @@ export class BackupService {
   private readonly ftpBaseDir = process.env.FTP_UPLOAD_DIR ?? '/ftp';
   private readonly mysqldumpPath = process.env.MYSQLDUMP_PATH ?? 'mysqldump';
   private readonly localBackupDir = process.env.BACKUP_LOCAL_DIR ?? path.join(process.cwd(), 'backups');
+  private readonly minFreeBytes = Number(process.env.BACKUP_MIN_FREE_MB) * 1024 * 1024 || 1024 * 1024 * 1024; // 1 GB default
+
+  /**
+   * Ensures the target drive has enough free space for a backup of the given size
+   * (with headroom), throwing before any partial copy is attempted.
+   */
+  private assertDiskSpace(requiredBytes: number, targetDir: string): void {
+    const stats = fs.statfsSync(targetDir);
+    const freeBytes = stats.bavail * stats.bsize;
+    const requiredWithHeadroom = requiredBytes * 1.2;
+
+    if (freeBytes < Math.max(requiredWithHeadroom, this.minFreeBytes)) {
+      throw new Error(
+        `Not enough disk space at ${targetDir}: ${(freeBytes / (1024 * 1024)).toFixed(0)} MB free, ` +
+          `need ~${(requiredWithHeadroom / (1024 * 1024)).toFixed(0)} MB`,
+      );
+    }
+  }
 
   private saveToLocal(filePath: string, subDir: string): string {
     const filename = path.basename(filePath);
+    const localDir = this.ensureLocalDir(subDir);
+
+    const fileSize = fs.statSync(filePath).size;
+    this.assertDiskSpace(fileSize, this.localBackupDir);
+
+    const localPath = path.join(localDir, filename);
+    fs.copyFileSync(filePath, localPath);
+    return localPath;
+  }
+
+  /**
+   * Resolves (and creates) today's dated backup folder under subDir.
+   */
+  private ensureLocalDir(subDir: string): string {
     const dateDir = new Date().toISOString().slice(0, 10);
     const localDir = path.join(this.localBackupDir, subDir, dateDir);
 
@@ -35,9 +67,7 @@ export class BackupService {
       fs.mkdirSync(localDir, { recursive: true });
     }
 
-    const localPath = path.join(localDir, filename);
-    fs.copyFileSync(filePath, localPath);
-    return localPath;
+    return localDir;
   }
 
   private parseDatabaseUrl(): {
@@ -133,7 +163,8 @@ export class BackupService {
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const zipFilename = `ftp-backup-${timestamp}.zip`;
-    const zipPath = path.join(os.tmpdir(), zipFilename);
+    const localDir = this.ensureLocalDir('ftp-backups');
+    const zipPath = path.join(localDir, zipFilename);
 
     const client = new FtpClient();
     client.ftp.verbose = false;
@@ -144,7 +175,11 @@ export class BackupService {
       const filePaths = await this.listFtpFilesRecursive(client, this.ftpBaseDir);
       this.logger.log(`Found ${filePaths.length} files on FTP to back up`);
 
-      // Create zip archive
+      // Rough pre-check: zipping shrinks most files, so raw total size is a safe upper bound
+      const totalSourceBytes = filePaths.reduce((sum, f) => sum + f.size, 0);
+      this.assertDiskSpace(totalSourceBytes, this.localBackupDir);
+
+      // Stream the zip archive directly to the local backup directory
       const output = fs.createWriteStream(zipPath);
       const archive = archiver.create('zip', { zlib: { level: 6 } });
 
@@ -155,7 +190,7 @@ export class BackupService {
 
       archive.pipe(output);
 
-      for (const filePath of filePaths) {
+      for (const { path: filePath } of filePaths) {
         try {
           const chunks: Buffer[] = [];
           const writable = new Writable({
@@ -185,30 +220,28 @@ export class BackupService {
       await archive.finalize();
       await archiveReady;
 
-      // Save to local backup directory
-      const localPath = this.saveToLocal(zipPath, 'ftp-backups');
-
       const zipSize = fs.statSync(zipPath).size;
       const sizeMb = (zipSize / (1024 * 1024)).toFixed(2);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(
-        `FTP backup saved: ${localPath} (${fileCount} files, ${sizeMb} MB, ${errorCount} errors, ${duration}s)`,
+        `FTP backup saved: ${zipPath} (${fileCount} files, ${sizeMb} MB, ${errorCount} errors, ${duration}s)`,
       );
     } catch (error) {
       this.logger.error(
         'FTP files backup failed',
         error instanceof Error ? error.stack : error,
       );
-    } finally {
-      client.close();
+      // Remove a partial/failed archive so it isn't mistaken for a valid backup
       if (fs.existsSync(zipPath)) {
         fs.unlinkSync(zipPath);
       }
+    } finally {
+      client.close();
     }
   }
 
-  private async listFtpFilesRecursive(client: FtpClient, dir: string): Promise<string[]> {
-    const files: string[] = [];
+  private async listFtpFilesRecursive(client: FtpClient, dir: string): Promise<{ path: string; size: number }[]> {
+    const files: { path: string; size: number }[] = [];
     const items = await client.list(dir);
 
     for (const item of items) {
@@ -217,7 +250,7 @@ export class BackupService {
         const subFiles = await this.listFtpFilesRecursive(client, fullPath);
         files.push(...subFiles);
       } else {
-        files.push(fullPath);
+        files.push({ path: fullPath, size: item.size });
       }
     }
 
