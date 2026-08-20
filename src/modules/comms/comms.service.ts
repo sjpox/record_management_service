@@ -921,6 +921,7 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     imageIds: number[] = [],
     crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
     watermark?: boolean,
+    overrideImages?: { imageId: number; base64: string }[],
   ): Promise<{ fileType: string; fileSize: number; base64: string }> {
     const comm = await this.prisma.communication.findUnique({
       where: { Id: id },
@@ -936,8 +937,17 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
       throw new BadRequestException('No images found for the selected IDs');
     }
 
-    const filePaths = selectedImages.map((img) => img.ImageFile);
-    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+    const overrideMap = new Map<number, string>();
+    if (overrideImages) {
+      for (const ov of overrideImages) {
+        overrideMap.set(ov.imageId, ov.base64);
+      }
+    }
+
+    const needsFetch = selectedImages.filter((img) => !overrideMap.has(img.Id));
+    const downloadedFiles = needsFetch.length > 0
+      ? await this.ftpService.downloadMultipleFiles(needsFetch.map((img) => img.ImageFile))
+      : new Map<string, Buffer>();
 
     const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
     if (crops) {
@@ -945,12 +955,19 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
         cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height, rotate: crop.rotate });
       }
     }
+
     const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
     for (const img of selectedImages) {
-      const buffer = downloadedFiles.get(img.ImageFile);
-      if (buffer) {
-        const entry = cropMap.get(img.Id);
-        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+      const overrideBase64 = overrideMap.get(img.Id);
+      if (overrideBase64) {
+        const base64Data = overrideBase64.replace(/^data:[^;]+;base64,/, '');
+        imageEntries.push({ buffer: Buffer.from(base64Data, 'base64') });
+      } else {
+        const buffer = downloadedFiles.get(img.ImageFile);
+        if (buffer) {
+          const entry = cropMap.get(img.Id);
+          imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+        }
       }
     }
 

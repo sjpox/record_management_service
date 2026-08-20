@@ -128,9 +128,9 @@ export class CommsController {
   composePdf(
     @Param('id', ParseIntPipe) id: number,
     @Query('color') color?: string,
-    @Body() body?: { imageIds?: number[]; crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[]; watermark?: boolean },
+    @Body() body?: { imageIds?: number[]; crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[]; watermark?: boolean; overrideImages?: { imageId: number; base64: string }[] },
   ) {
-    return this.commsService.composePdf(id, color === 'bw', body?.imageIds ?? [], body?.crops, body?.watermark);
+    return this.commsService.composePdf(id, color === 'bw', body?.imageIds ?? [], body?.crops, body?.watermark, body?.overrideImages);
   }
 
   @Get(':id/details')

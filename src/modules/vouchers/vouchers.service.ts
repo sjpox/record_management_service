@@ -766,6 +766,7 @@ export class VouchersService {
     imageIds: number[] = [],
     crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
     watermark?: boolean,
+    overrideImages?: { imageId: number; base64: string }[],
   ): Promise<{
     fileType: string;
     fileSize: number;
@@ -787,9 +788,20 @@ export class VouchersService {
       throw new BadRequestException('No images found for the selected IDs');
     }
 
-    // Download selected images from FTP
-    const filePaths = selectedImages.map((img) => img.ImageFile);
-    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+    // Build override map keyed by imageId (base64 data URLs from frontend)
+    const overrideMap = new Map<number, string>();
+    if (overrideImages) {
+      for (const ov of overrideImages) {
+        overrideMap.set(ov.imageId, ov.base64);
+      }
+    }
+
+    // Download only images not provided as overrides
+    const needsFetch = selectedImages.filter((img) => !overrideMap.has(img.Id));
+    const filePaths = needsFetch.map((img) => img.ImageFile);
+    const downloadedFiles = needsFetch.length > 0
+      ? await this.ftpService.downloadMultipleFiles(filePaths)
+      : new Map<string, Buffer>();
 
     // Build crop map keyed by imageId
     const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
@@ -801,10 +813,19 @@ export class VouchersService {
 
     const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
     for (const img of selectedImages) {
-      const buffer = downloadedFiles.get(img.ImageFile);
-      if (buffer) {
-        const entry = cropMap.get(img.Id);
-        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+      const overrideBase64 = overrideMap.get(img.Id);
+      if (overrideBase64) {
+        // Strip data URL prefix and decode to buffer
+        const base64Data = overrideBase64.replace(/^data:[^;]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        // Override images are already edited — no crop/rotate needed
+        imageEntries.push({ buffer });
+      } else {
+        const buffer = downloadedFiles.get(img.ImageFile);
+        if (buffer) {
+          const entry = cropMap.get(img.Id);
+          imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+        }
       }
     }
 

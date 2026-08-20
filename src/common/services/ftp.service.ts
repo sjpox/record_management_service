@@ -502,7 +502,7 @@ export class FtpService {
           const imgWidth = metadata.width ?? pageWidth;
           const imgHeight = metadata.height ?? pageHeight;
 
-          // Fit to frame: scale image to fill A4 page while maintaining aspect ratio
+          // Fit to frame at contentScale, then center (may overflow page edges at >1.0)
           const scaleX = pageWidth / imgWidth;
           const scaleY = pageHeight / imgHeight;
           const scale = Math.min(scaleX, scaleY);

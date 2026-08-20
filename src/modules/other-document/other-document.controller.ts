@@ -139,7 +139,7 @@ export class OtherDocumentController {
     @Body() dto?: ComposePdfDto,
   ) {
     const isBlackAndWhite = color === 'bw';
-    return this.service.composeDocument(id, isBlackAndWhite, false, dto?.imageIds ?? [], dto?.crops, dto?.watermark);
+    return this.service.composeDocument(id, isBlackAndWhite, false, dto?.imageIds ?? [], dto?.crops, dto?.watermark, dto?.overrideImages);
   }
 
   @Delete(':id')
