@@ -95,7 +95,7 @@ export class BackupService {
     };
   }
 
-  @Cron('30 12,17 * * *', { name: 'database-backup' })
+  @Cron('0 17 * * *', { name: 'database-backup' })
   async handleBackup(): Promise<void> {
     this.logger.log('Starting database backup...');
     const startTime = Date.now();
@@ -154,7 +154,7 @@ export class BackupService {
     }
   }
 
-  @Cron('30 12,17 * * *', { name: 'ftp-files-backup' })
+  @Cron('0 17 * * *', { name: 'ftp-files-backup' })
   async handleFtpBackup(): Promise<void> {
     this.logger.log('Starting FTP files backup...');
     const startTime = Date.now();
