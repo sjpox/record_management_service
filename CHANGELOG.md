@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0] - 2026-08-20
+
+### Added
+- Compose-pdf endpoints (vouchers, communications, other documents, index documents) now accept `overrideImages` to substitute edited image data at composition time.
+
+### Changed
+- FTP backup now streams the zip archive directly to the local backup directory instead of building it in the OS temp folder and copying afterward, avoiding a redundant full-size copy.
+- Backup saving now checks available disk space before writing and fails fast with a clear error instead of a raw `ENOSPC` crash.
+
 ## [1.12.0] - 2026-08-03
 
 ### Added
