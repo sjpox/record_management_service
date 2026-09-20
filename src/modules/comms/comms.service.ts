@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FtpService } from '../../common/services/ftp.service';
@@ -7,14 +7,34 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { CreateCommDto } from './dto/create-comm.dto';
 import { UpdateCommDto } from './dto/update-comm.dto';
+import { CreateThreadDto } from './dto/create-thread.dto';
+import { UpdateThreadDto } from './dto/update-thread.dto';
 import sharp from 'sharp';
 
 const userSelect = { Id: true, FirstName: true, LastName: true };
+
+const commChainSelect = {
+  Id: true,
+  Type: true,
+  ReferenceNumber: true,
+  Subject: true,
+  Sender: true,
+  Recipient: true,
+  Status: true,
+  Priority: true,
+  DateReceived: true,
+  DateSent: true,
+  CreatedAt: true,
+  IsArchived: true,
+  CreatedBy: { select: userSelect },
+};
 
 const commInclude = {
   CreatedBy: { select: userSelect },
   ArchivedBy: { select: userSelect },
   DocumentType: { select: { Id: true, Type: true } },
+  LinksAsA: { select: { CommB: { select: commChainSelect } } },
+  LinksAsB: { select: { CommA: { select: commChainSelect } } },
   ShelfItem: {
     include: {
       Shelf: {
@@ -111,7 +131,42 @@ export class CommsService {
             },
           }
         : null,
+      parentCommId: null,
+      linkedComms: this.formatManyLinks(comm.Id, comm.LinksAsA ?? [], comm.LinksAsB ?? []),
     };
+  }
+
+  private formatChainLink(c: any) {
+    return {
+      id: c.Id,
+      referenceNumber: c.ReferenceNumber,
+      type: c.Type,
+      subject: c.Subject,
+      sender: c.Sender,
+      recipient: c.Recipient,
+      status: c.Status,
+      priority: c.Priority,
+      dateReceived: c.DateReceived?.toISOString() ?? null,
+      dateSent: c.DateSent?.toISOString() ?? null,
+      createdAt: c.CreatedAt.toISOString(),
+      isArchived: c.IsArchived,
+      parentCommId: null,
+      createdBy: c.CreatedBy ? { id: c.CreatedBy.Id, firstName: c.CreatedBy.FirstName, lastName: c.CreatedBy.LastName } : null,
+    };
+  }
+
+  private formatManyLinks(selfId: number, linksAsA: any[], linksAsB: any[]) {
+    const seen = new Set<number>();
+    const result: any[] = [];
+    for (const link of linksAsA) {
+      const c = link.CommB;
+      if (!seen.has(c.Id)) { seen.add(c.Id); result.push(this.formatChainLink(c)); }
+    }
+    for (const link of linksAsB) {
+      const c = link.CommA;
+      if (!seen.has(c.Id)) { seen.add(c.Id); result.push(this.formatChainLink(c)); }
+    }
+    return result;
   }
 
   private async buildVisibilityFilter(userId: number, userRole?: string): Promise<any | null> {
@@ -215,46 +270,87 @@ export class CommsService {
 
     const prefix = dto.type === 'incoming' ? 'IN' : 'OUT';
     const year = new Date().getFullYear();
-    const count = await this.prisma.communication.count({
-      where: { Type: dto.type },
-    });
-    const seq = String(count + 1).padStart(4, '0');
-    const referenceNumber = `${prefix}-${year}-${seq}`;
 
-    const comm = await this.prisma.communication.create({
-      data: {
-        Type: dto.type,
-        ReferenceNumber: referenceNumber,
-        Subject: dto.subject,
-        Description: dto.description || null,
-        Sender: dto.sender,
-        Recipient: dto.recipient,
-        DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
-        DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
-        Priority: dto.priority || 'normal',
-        DocumentTypeId: dto.documentTypeId || null,
-        CreatedById: userId,
-        Actions: dto.actions?.length
-          ? {
-              create: dto.actions.map((a) => ({
-                ActionRequired: a.actionRequired,
-                DueDate: a.dueDate ? new Date(a.dueDate) : null,
-                Assignees: a.assignees?.length
-                  ? {
-                      create: a.assignees.map((assignee) => ({
-                        UserId: assignee.userId || null,
-                        Name: assignee.name || null,
-                      })),
-                    }
-                  : undefined,
-              })),
-            }
-          : undefined,
-      },
-      include: commInclude,
+    const buildCommData = (referenceNumber: string) => ({
+      Type: dto.type,
+      ReferenceNumber: referenceNumber,
+      Subject: dto.subject,
+      Description: dto.description || null,
+      Sender: dto.sender,
+      Recipient: dto.recipient,
+      DateReceived: dto.dateReceived ? new Date(dto.dateReceived) : new Date(),
+      DateSent: dto.dateSent ? new Date(dto.dateSent) : null,
+      Priority: dto.priority || 'normal',
+      DocumentTypeId: dto.documentTypeId || null,
+      CreatedById: userId,
+      Actions: dto.actions?.length
+        ? {
+            create: dto.actions.map((a) => ({
+              ActionRequired: a.actionRequired,
+              DueDate: a.dueDate ? new Date(a.dueDate) : null,
+              Assignees: a.assignees?.length
+                ? {
+                    create: a.assignees.map((assignee) => ({
+                      UserId: assignee.userId || null,
+                      Name: assignee.name || null,
+                    })),
+                  }
+                : undefined,
+            })),
+          }
+        : undefined,
     });
 
-    const result = this.formatComm(comm);
+    const createWithReferenceNumber = (referenceNumber: string) =>
+      this.prisma.communication.create({
+        data: buildCommData(referenceNumber),
+        include: commInclude,
+      });
+
+    // Reference numbers must be unique. A plain count() is unsafe: gaps from deleted rows or
+    // manual renumbering make count()+1 collide with an already-used number. Instead, derive
+    // the next sequence from the highest existing number for this prefix+year, and retry with
+    // a fresh lookup if a concurrent request still wins the insert race.
+    const yearPrefix = `${prefix}-${year}-`;
+    const nextReferenceNumber = async () => {
+      const latest = await this.prisma.communication.findFirst({
+        where: { Type: dto.type, ReferenceNumber: { startsWith: yearPrefix } },
+        orderBy: { ReferenceNumber: 'desc' },
+        select: { ReferenceNumber: true },
+      });
+      const lastSeq = latest ? parseInt(latest.ReferenceNumber.slice(yearPrefix.length), 10) || 0 : 0;
+      const seq = String(lastSeq + 1).padStart(4, '0');
+      return `${yearPrefix}${seq}`;
+    };
+
+    const maxAttempts = 5;
+    let comm: Awaited<ReturnType<typeof createWithReferenceNumber>> | undefined;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const referenceNumber = await nextReferenceNumber();
+
+      try {
+        comm = await createWithReferenceNumber(referenceNumber);
+        break;
+      } catch (err) {
+        const isUniqueConflict = (err as { code?: string })?.code === 'P2002';
+        if (!isUniqueConflict || attempt === maxAttempts) throw err;
+      }
+    }
+    if (!comm) throw new BadRequestException('Failed to generate a unique reference number');
+
+    // Create M:N links if provided
+    const linkedCommIds: number[] = (dto as any).linkedCommIds ?? [];
+    for (const otherId of linkedCommIds) {
+      const [a, b] = comm.Id < otherId ? [comm.Id, otherId] : [otherId, comm.Id];
+      await this.prisma.communicationLink.upsert({
+        where: { CommAId_CommBId: { CommAId: a, CommBId: b } },
+        create: { CommAId: a, CommBId: b },
+        update: {},
+      });
+    }
+
+    const fullComm = await this.prisma.communication.findUnique({ where: { Id: comm.Id }, include: commInclude });
+    const result = this.formatComm(fullComm);
     await this.audit.log({ entityType: 'Communication', entityId: comm.Id, action: 'create', userId, changes: { after: result } });
 
     // Notify registered assignees
@@ -270,9 +366,15 @@ export class CommsService {
     return result;
   }
 
-  async update(id: number, dto: UpdateCommDto, userId?: number) {
+  async update(id: number, dto: UpdateCommDto, userId?: number, userRole?: string) {
     const existing = await this.prisma.communication.findUnique({ where: { Id: id } });
     if (!existing) throw new NotFoundException('Communication not found');
+
+    const isCreator = userId !== undefined && existing.CreatedById === userId;
+    const hasWrite = userRole ? await this.permissions.isAllowed(userRole, 'comms', 'write') : false;
+    if (!isCreator && !hasWrite) {
+      throw new ForbiddenException('Only the creator or users with comms write permission can update this communication');
+    }
 
     const updateData: any = {};
     if (dto.type) updateData.Type = dto.type;
@@ -366,7 +468,26 @@ export class CommsService {
       include: commInclude,
     });
 
-    const result = this.formatComm(comm);
+    // Replace M:N links if linkedCommIds is explicitly provided
+    if ((dto as any).linkedCommIds !== undefined) {
+      const linkedCommIds: number[] = (dto as any).linkedCommIds ?? [];
+      // Delete all existing links for this comm
+      await this.prisma.communicationLink.deleteMany({
+        where: { OR: [{ CommAId: id }, { CommBId: id }] },
+      });
+      // Create new links
+      for (const otherId of linkedCommIds) {
+        const [a, b] = id < otherId ? [id, otherId] : [otherId, id];
+        await this.prisma.communicationLink.upsert({
+          where: { CommAId_CommBId: { CommAId: a, CommBId: b } },
+          create: { CommAId: a, CommBId: b },
+          update: {},
+        });
+      }
+    }
+
+    const refreshed = await this.prisma.communication.findUnique({ where: { Id: id }, include: commInclude });
+    const result = this.formatComm(refreshed);
     await this.audit.log({ entityType: 'Communication', entityId: id, action: 'update', userId, changes: { after: result } });
 
     // Notify all recipients and assignees about the update
@@ -379,7 +500,7 @@ export class CommsService {
       }
 
       // Add all current assignee user IDs
-      for (const action of comm.Actions) {
+      for (const action of (refreshed ?? comm).Actions) {
         for (const assignee of action.Assignees) {
           if (assignee.UserId) notifyUserIds.add(assignee.UserId);
         }
@@ -388,14 +509,15 @@ export class CommsService {
       // Remove the user who made the update
       notifyUserIds.delete(userId);
 
+      const notifyComm = refreshed ?? comm;
       for (const uid of notifyUserIds) {
         await this.notifications.notify({
           userId: uid,
           type: 'comm_updated',
           title: 'A communication has been updated',
-          body: `[${comm.ReferenceNumber}] ${comm.Subject}`,
+          body: `[${notifyComm.ReferenceNumber}] ${notifyComm.Subject}`,
           entityType: 'Communication',
-          entityId: comm.Id,
+          entityId: notifyComm.Id,
         });
       }
     }
@@ -444,6 +566,12 @@ export class CommsService {
       },
     });
     if (!action) throw new NotFoundException('Action not found');
+
+    const isAssignee = action.Assignees.some((a) => a.UserId === userId);
+    const isCommCreator = action.Communication.CreatedById === userId;
+    if (!isAssignee && !isCommCreator) {
+      throw new ForbiddenException('Only assignees or the communication creator can update action item status');
+    }
 
     // Cycle: pending → in-progress → completed → pending
     let nextStatus: string;
@@ -499,7 +627,7 @@ export class CommsService {
       await this.notifications.notify({
         userId: uid,
         type: 'comm_recipient',
-        title: 'You are a recipient of a communication',
+        title: 'You are an addressee of a communication',
         body: `[${referenceNumber}] ${subject}`,
         entityType: 'Communication',
         entityId: commId,
@@ -780,9 +908,18 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
   ) {
     const action = await this.prisma.commAction.findUnique({
       where: { Id: actionId },
-      include: { Communication: { select: { ReferenceNumber: true } } },
+      include: {
+        Assignees: true,
+        Communication: { select: { ReferenceNumber: true, CreatedById: true } },
+      },
     });
     if (!action) throw new NotFoundException('Action not found');
+
+    const isAssignee = action.Assignees.some((a) => a.UserId === userId);
+    const isCommCreator = action.Communication.CreatedById === userId;
+    if (!isAssignee && !isCommCreator) {
+      throw new ForbiddenException('Only assignees or the communication creator can reply to action items');
+    }
 
     if (!content?.trim() && (!files || files.length === 0)) {
       throw new BadRequestException('Reply must have content or images');
@@ -921,6 +1058,7 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     imageIds: number[] = [],
     crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[],
     watermark?: boolean,
+    overrideImages?: { imageId: number; base64: string }[],
   ): Promise<{ fileType: string; fileSize: number; base64: string }> {
     const comm = await this.prisma.communication.findUnique({
       where: { Id: id },
@@ -936,8 +1074,17 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
       throw new BadRequestException('No images found for the selected IDs');
     }
 
-    const filePaths = selectedImages.map((img) => img.ImageFile);
-    const downloadedFiles = await this.ftpService.downloadMultipleFiles(filePaths);
+    const overrideMap = new Map<number, string>();
+    if (overrideImages) {
+      for (const ov of overrideImages) {
+        overrideMap.set(ov.imageId, ov.base64);
+      }
+    }
+
+    const needsFetch = selectedImages.filter((img) => !overrideMap.has(img.Id));
+    const downloadedFiles = needsFetch.length > 0
+      ? await this.ftpService.downloadMultipleFiles(needsFetch.map((img) => img.ImageFile))
+      : new Map<string, Buffer>();
 
     const cropMap = new Map<number, { left: number; top: number; width: number; height: number; rotate?: number }>();
     if (crops) {
@@ -945,12 +1092,19 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
         cropMap.set(crop.imageId, { left: crop.left, top: crop.top, width: crop.width, height: crop.height, rotate: crop.rotate });
       }
     }
+
     const imageEntries: { buffer: Buffer; crop?: { left: number; top: number; width: number; height: number }; rotate?: number }[] = [];
     for (const img of selectedImages) {
-      const buffer = downloadedFiles.get(img.ImageFile);
-      if (buffer) {
-        const entry = cropMap.get(img.Id);
-        imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+      const overrideBase64 = overrideMap.get(img.Id);
+      if (overrideBase64) {
+        const base64Data = overrideBase64.replace(/^data:[^;]+;base64,/, '');
+        imageEntries.push({ buffer: Buffer.from(base64Data, 'base64') });
+      } else {
+        const buffer = downloadedFiles.get(img.ImageFile);
+        if (buffer) {
+          const entry = cropMap.get(img.Id);
+          imageEntries.push({ buffer, crop: entry, rotate: entry?.rotate });
+        }
       }
     }
 
@@ -958,7 +1112,7 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false, watermark ? 'COPY' : undefined);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, false, watermark ? 'Provincial Accounting Office Bohol' : undefined);
     return {
       fileType: 'pdf',
       fileSize: pdfBuffer.length,
@@ -982,5 +1136,53 @@ async updateShelf(id: number, shelfItemId?: number, userId?: number) {
     // Delete from DB (cascades to images)
     await this.prisma.commActionReply.delete({ where: { Id: replyId } });
     await this.audit.log({ entityType: 'CommActionReply', entityId: replyId, action: 'delete', userId });
+  }
+
+  async addCommLink(commAId: number, commBId: number) {
+    const [a, b] = commAId < commBId ? [commAId, commBId] : [commBId, commAId];
+    await this.prisma.communicationLink.upsert({
+      where: { CommAId_CommBId: { CommAId: a, CommBId: b } },
+      create: { CommAId: a, CommBId: b },
+      update: {},
+    });
+    return { success: true };
+  }
+
+  async removeCommLink(commAId: number, commBId: number) {
+    const [a, b] = commAId < commBId ? [commAId, commBId] : [commBId, commAId];
+    await this.prisma.communicationLink.deleteMany({
+      where: { CommAId: a, CommBId: b },
+    });
+    return { success: true };
+  }
+
+  async getCommChain(commId: number) {
+    // BFS/DFS across the M:N link graph starting from commId
+    const visited = new Set<number>();
+    const queue = [commId];
+    const collected: any[] = [];
+
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+
+      const c = await this.prisma.communication.findUnique({
+        where: { Id: id },
+        select: commChainSelect,
+      });
+      if (c) collected.push(c);
+
+      const links = await this.prisma.communicationLink.findMany({
+        where: { OR: [{ CommAId: id }, { CommBId: id }] },
+        select: { CommAId: true, CommBId: true },
+      });
+      for (const link of links) {
+        const neighbor = link.CommAId === id ? link.CommBId : link.CommAId;
+        if (!visited.has(neighbor)) queue.push(neighbor);
+      }
+    }
+
+    return collected.map((c) => this.formatChainLink(c));
   }
 }

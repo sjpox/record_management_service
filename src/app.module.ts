@@ -17,6 +17,7 @@ import { CommsModule } from './modules/comms/comms.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RecipientGroupsModule } from './modules/recipient-groups/recipient-groups.module';
+import { PartiesModule } from './modules/parties/parties.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { VoucherAgeingModule } from './modules/voucher-ageing/voucher-ageing.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
@@ -42,6 +43,7 @@ import { MaintenanceMiddleware } from './modules/health/maintenance.middleware';
     CommsModule,
     ChatModule,
     RecipientGroupsModule,
+    PartiesModule,
     AnnouncementsModule,
     VoucherAgeingModule,
     PermissionsModule,

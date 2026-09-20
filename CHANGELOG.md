@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.13.0] - 2026-08-20
+
+### Added
+- `overrideImages` support on all compose-pdf endpoints (vouchers, communications, index documents, other documents): the request body now accepts `overrideImages: [{ imageId, base64 }]`; the service decodes each entry and uses it in place of fetching the original file from FTP, so the generated PDF exactly matches what the frontend displays.
+- `OverrideImage` class and `overrideImages` field added to the shared `ComposePdfDto` with full class-validator decorators (`@IsOptional`, `@IsArray`, `@ValidateNested`, `@Type`).
+- `comms.service.ts`, `index-document.service.ts`, `other-document.service.ts`, and `vouchers.service.ts` each build an override map keyed by image ID, skip the FTP fetch for overridden images, and decode the base64 data URL (stripping the `data:…;base64,` prefix) into a `Buffer` for PDF composition.
+
+### Changed
+- FTP backup now streams the zip archive directly to the local backup directory instead of building it in the OS temp folder and copying afterward, avoiding a redundant full-size copy.
+- Backup saving now checks available disk space before writing and fails fast with a clear error instead of a raw `ENOSPC` crash.
+
 ## [1.12.0] - 2026-08-03
 
 ### Added

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFiles, ParseIntPipe } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PermissionGuard } from '../permissions/permission.guard';
@@ -66,13 +66,12 @@ export class CommsController {
   }
 
   @Put(':id')
-  @RequirePermission('comms', 'write')
   update(
-    @CurrentUser() user: { Id: number },
+    @CurrentUser() user: { Id: number; Role?: string },
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCommDto,
   ) {
-    return this.commsService.update(id, dto, user.Id);
+    return this.commsService.update(id, dto, user.Id, user.Role);
   }
 
   @Delete(':id')
@@ -128,9 +127,9 @@ export class CommsController {
   composePdf(
     @Param('id', ParseIntPipe) id: number,
     @Query('color') color?: string,
-    @Body() body?: { imageIds?: number[]; crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[]; watermark?: boolean },
+    @Body() body?: { imageIds?: number[]; crops?: { imageId: number; left: number; top: number; width: number; height: number; rotate?: number }[]; watermark?: boolean; overrideImages?: { imageId: number; base64: string }[] },
   ) {
-    return this.commsService.composePdf(id, color === 'bw', body?.imageIds ?? [], body?.crops, body?.watermark);
+    return this.commsService.composePdf(id, color === 'bw', body?.imageIds ?? [], body?.crops, body?.watermark, body?.overrideImages);
   }
 
   @Get(':id/details')
@@ -186,4 +185,33 @@ export class CommsController {
   ) {
     return this.commsService.deleteReply(replyId, user.Id);
   }
+
+  // ── Comm Chain Endpoints ──────────────────────────────────────
+
+  @Get(':id/chain')
+  @ApiOperation({ summary: 'Get the full comm chain for a communication' })
+  getCommChain(@Param('id', ParseIntPipe) id: number) {
+    return this.commsService.getCommChain(id);
+  }
+
+  @Post(':id/links/:otherId')
+  @RequirePermission('comms', 'write')
+  @ApiOperation({ summary: 'Link two communications together' })
+  addCommLink(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('otherId', ParseIntPipe) otherId: number,
+  ) {
+    return this.commsService.addCommLink(id, otherId);
+  }
+
+  @Delete(':id/links/:otherId')
+  @RequirePermission('comms', 'write')
+  @ApiOperation({ summary: 'Remove link between two communications' })
+  removeCommLink(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('otherId', ParseIntPipe) otherId: number,
+  ) {
+    return this.commsService.removeCommLink(id, otherId);
+  }
+
 }

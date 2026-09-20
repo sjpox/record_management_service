@@ -1,4 +1,4 @@
-import { IsOptional, IsArray, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
+import { IsOptional, IsArray, ValidateNested, IsNumber, IsBoolean, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CropArea {
@@ -22,6 +22,14 @@ export class CropArea {
   rotate?: number;
 }
 
+export class OverrideImage {
+  @IsNumber()
+  imageId: number;
+
+  @IsString()
+  base64: string;
+}
+
 export class ComposePdfDto {
   @IsArray()
   @IsNumber({}, { each: true })
@@ -36,4 +44,10 @@ export class ComposePdfDto {
   @IsOptional()
   @IsBoolean()
   watermark?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OverrideImage)
+  overrideImages?: OverrideImage[];
 }
