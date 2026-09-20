@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn, IsInt, MaxLength, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn, IsInt, IsNumber, MaxLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -76,7 +76,7 @@ export class CreateCommDto {
   @IsIn(['low', 'normal', 'urgent'])
   priority?: string;
 
-  @ApiPropertyOptional({ description: 'User IDs of recipients (individuals and group members) for notifications' })
+  @ApiPropertyOptional({ description: 'User IDs of addressees (individuals and group members) for notifications' })
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
@@ -88,6 +88,13 @@ export class CreateCommDto {
   @IsInt()
   @Type(() => Number)
   documentTypeId?: number;
+
+  @ApiPropertyOptional({ description: 'IDs of other comms to link with this one (M:N)' })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Type(() => Number)
+  linkedCommIds?: number[];
 
   @ApiPropertyOptional()
   @IsOptional()

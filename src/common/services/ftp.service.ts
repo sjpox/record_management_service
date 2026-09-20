@@ -518,20 +518,31 @@ export class FtpService {
 
           if (watermark) {
             const label = watermark.toUpperCase();
-            const fontSize = 72;
+            const fontSize = 24;
             const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
             doc.save();
             doc.translate(pageWidth / 2, pageHeight / 2);
             doc.rotate(-45);
             doc.font('Helvetica-Bold').fontSize(fontSize);
             doc.fillColor('red').fillOpacity(0.25);
-            // Repeat the watermark text across the diagonal strip
+            // Repeat the watermark text across the diagonal strip; give text() a
+            // wide, explicit bounding box so it never wraps/truncates the label,
+            // and disable the default page-width clip.
             const textWidth = doc.widthOfString(label);
-            const gap = textWidth * 1.5;
+            const gap = textWidth + fontSize * 3;
+            const rowGap = fontSize * 4;
             const count = Math.ceil(diagonal / gap) + 2;
+            const rows = Math.ceil(diagonal / rowGap) + 2;
             const startX = -((count * gap) / 2);
-            for (let i = 0; i < count; i++) {
-              doc.text(label, startX + i * gap, -fontSize / 2, { lineBreak: false });
+            const startY = -((rows * rowGap) / 2);
+            for (let row = 0; row < rows; row++) {
+              const y = startY + row * rowGap;
+              for (let i = 0; i < count; i++) {
+                doc.text(label, startX + i * gap, y, {
+                  lineBreak: false,
+                  width: textWidth + 10,
+                });
+              }
             }
             doc.restore();
           }

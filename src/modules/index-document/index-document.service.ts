@@ -514,7 +514,7 @@ export class IndexDocumentService {
       throw new BadRequestException('Failed to download images for PDF composition');
     }
 
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'COPY' : undefined);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'Provincial Accounting Office Bohol' : undefined);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {

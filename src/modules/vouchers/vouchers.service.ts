@@ -135,6 +135,8 @@ export class VouchersService {
       orConditions.push(
         { VoucherNo: { contains: search } },
         { TransactionNo: { contains: search } },
+        { Payee: { contains: search } },
+        { ClaimType: { contains: search } },
       );
     }
 
@@ -834,7 +836,7 @@ export class VouchersService {
     }
 
     // Compose into PDF (no FTP save, just return for printing)
-    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'COPY' : undefined);
+    const pdfBuffer = await this.ftpService.composeToPdf(imageEntries, isBlackAndWhite, isScanEffect, watermark ? 'Provincial Accounting Office Bohol' : undefined);
     const base64 = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
     return {

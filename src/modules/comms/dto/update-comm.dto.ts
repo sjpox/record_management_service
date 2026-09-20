@@ -93,7 +93,7 @@ export class UpdateCommDto {
   @IsIn(['pending', 'in-progress', 'completed', 'overdue'])
   status?: string;
 
-  @ApiPropertyOptional({ description: 'User IDs of recipients for notifications' })
+  @ApiPropertyOptional({ description: 'User IDs of addressees for notifications' })
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
@@ -105,6 +105,13 @@ export class UpdateCommDto {
   @IsInt()
   @Type(() => Number)
   documentTypeId?: number;
+
+  @ApiPropertyOptional({ description: 'Full set of comm IDs to link this comm to (M:N); replaces all existing links' })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Type(() => Number)
+  linkedCommIds?: number[];
 
   @ApiPropertyOptional()
   @IsOptional()
