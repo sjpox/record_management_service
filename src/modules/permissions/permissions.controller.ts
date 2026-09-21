@@ -21,7 +21,6 @@ export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
 
   @Get()
-  @RequirePermission('permissions', 'read')
   @ApiOperation({ summary: 'List all role permission entries' })
   getAll() {
     return this.service.getAll();
