@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.14.0] - 2026-10-05
+
+### Added
+- New Parties module (`src/modules/parties`) with CRUD endpoints (`GET/POST /parties`, `GET/PUT/DELETE /parties/:id`) for the offices, organizations and contacts offered as communication senders. New `Party` model (`parties` table).
+- Linked communications: new `CommunicationLink` model (M:N, normalized so `CommAId < CommBId`), `linkedCommIds` on create/update, and `POST /comms/:id/links/:otherId`, `DELETE /comms/:id/links/:otherId` and `GET /comms/:id/chain` endpoints.
+- Admin password reset: `POST /users/:id/reset-password` sets a new password for another user. Requires the new `reset-password:write` permission (admins allowed by default), enforces the same strength rules as change-password, and writes a `RESET_PASSWORD` audit log entry recording who performed it.
+- Document type list (`GET /other-documents/document-types`) now returns `DocumentCount` and `CommunicationCount` usage counts for each type.
+
+### Changed
+- Communications search matches each word independently (up to 8) across reference number, subject, sender, recipient, description, document type, logger name, action items and notes, assignees and action replies.
+- Voucher search also matches payee and claim type.
+- Composed PDF watermark label changed from "COPY" to "Provincial Accounting Office Bohol"; it is drawn once along the page diagonal at 8% opacity instead of tiled across the page.
+- `PUT /users/:id` no longer accepts `Password`; passwords for other users can only be changed through the reset-password endpoint.
+
+### Fixed
+- Backup cron now runs once daily at 5pm, instead of twice a day.
+- Parties `findAll` pagination response structure corrected to the flat `{ data, total, page, limit, totalPages }` shape.
+- `GET /permissions` no longer requires `permissions:read`, so non-admin roles can load their own permissions instead of being locked out of the UI.
+- Compose-pdf watermark is sized from the label length so the full text fits within the page instead of being clipped or oversized.
+- Deleting a document type that is used by communications now returns a clear 400 explaining what uses it, instead of failing on the database foreign key.
+
 ## [1.13.0] - 2026-08-20
 
 ### Added
