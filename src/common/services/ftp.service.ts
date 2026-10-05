@@ -518,16 +518,31 @@ export class FtpService {
 
           if (watermark) {
             const label = watermark.toUpperCase();
-            const fontSize = Math.max(pageWidth, pageHeight) * 0.06;
+            // Run along the page diagonal and size the text so its rotated box fits inside the page
+            const angle = Math.atan2(pageHeight, pageWidth);
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            doc.font('Helvetica-Bold').fontSize(100);
+            const unitWidth = doc.widthOfString(label) / 100;
+            const unitHeight = doc.currentLineHeight() / 100;
+            const fill = 0.85;
+            const fontSize = Math.min(
+              (pageWidth * fill) / (unitWidth * cos + unitHeight * sin),
+              (pageHeight * fill) / (unitWidth * sin + unitHeight * cos),
+              Math.min(pageWidth, pageHeight) * 0.18,
+            );
+
             doc.save();
             doc.translate(pageWidth / 2, pageHeight / 2);
-            doc.rotate(-45);
-            doc.font('Helvetica-Bold').fontSize(fontSize);
+            doc.rotate((-angle * 180) / Math.PI);
+            doc.fontSize(fontSize);
             doc.fillColor('red').fillOpacity(0.08);
             const textWidth = doc.widthOfString(label);
-            doc.text(label, -(textWidth / 2), -(fontSize / 2), {
+            const textHeight = doc.currentLineHeight();
+            doc.text(label, -(textWidth / 2), -(textHeight / 2), {
               lineBreak: false,
-              width: textWidth + 10,
+              width: textWidth + 1,
+              align: 'center',
             });
             doc.restore();
           }

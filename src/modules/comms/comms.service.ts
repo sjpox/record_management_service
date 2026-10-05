@@ -214,16 +214,37 @@ export class CommsService {
     if (type && type !== 'all') where.Type = type;
     if (status && status !== 'all') where.Status = status;
     if (priority && priority !== 'all') where.Priority = priority;
-    if (search) {
-      const searchFilter = {
-        OR: [
-          { Subject: { contains: search } },
-          { ReferenceNumber: { contains: search } },
-          { Sender: { contains: search } },
-          { Recipient: { contains: search } },
-        ],
-      };
-      where.AND = [...(where.AND || []), searchFilter];
+    const terms = (search ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 8);
+    if (terms.length) {
+      // Every word must match at least one field, so multi-word queries narrow results
+      const termFilters = terms.map((term) => {
+        const c = { contains: term };
+        const userMatch = { OR: [{ FirstName: c }, { LastName: c }] };
+        return {
+          OR: [
+            { Subject: c },
+            { ReferenceNumber: c },
+            { Sender: c },
+            { Recipient: c },
+            { Description: c },
+            { DocumentType: { is: { Type: c } } },
+            { CreatedBy: userMatch },
+            {
+              Actions: {
+                some: {
+                  OR: [
+                    { ActionRequired: c },
+                    { Notes: c },
+                    { Assignees: { some: { OR: [{ Name: c }, { User: { is: userMatch } }] } } },
+                    { Replies: { some: { Content: c } } },
+                  ],
+                },
+              },
+            },
+          ],
+        };
+      });
+      where.AND = [...(where.AND || []), ...termFilters];
     }
 
     const sortFieldMap: Record<string, string> = {

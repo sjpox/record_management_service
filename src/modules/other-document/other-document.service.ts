@@ -462,10 +462,15 @@ export class OtherDocumentService {
   }
 
   async getDocumentTypes() {
-    return this.prisma.otherDocumentType.findMany({
-      select: { Id: true, Type: true },
+    const types = await this.prisma.otherDocumentType.findMany({
+      select: { Id: true, Type: true, _count: { select: { OtherDocuments: true, Communications: true } } },
       orderBy: { Type: 'asc' },
     });
+    return types.map(({ _count, ...t }) => ({
+      ...t,
+      DocumentCount: _count.OtherDocuments,
+      CommunicationCount: _count.Communications,
+    }));
   }
 
   async createDocumentType(dto: CreateDocumentTypeDto) {
@@ -504,14 +509,19 @@ export class OtherDocumentService {
   async deleteDocumentType(id: number) {
     const existing = await this.prisma.otherDocumentType.findUnique({
       where: { Id: id },
-      include: { _count: { select: { OtherDocuments: true } } },
+      include: { _count: { select: { OtherDocuments: true, Communications: true } } },
     });
     if (!existing) {
       throw new NotFoundException(`Document type with ID ${id} not found`);
     }
-    if (existing._count.OtherDocuments > 0) {
+    const { OtherDocuments: docs, Communications: comms } = existing._count;
+    if (docs > 0 || comms > 0) {
+      const usage = [
+        docs > 0 && `${docs} document${docs !== 1 ? 's' : ''}`,
+        comms > 0 && `${comms} communication${comms !== 1 ? 's' : ''}`,
+      ].filter(Boolean).join(' and ');
       throw new BadRequestException(
-        `Cannot delete document type "${existing.Type}" because it is used by ${existing._count.OtherDocuments} document(s)`,
+        `Cannot delete "${existing.Type}" because it is used by ${usage}. Reassign them to another type first.`,
       );
     }
     return this.prisma.otherDocumentType.delete({

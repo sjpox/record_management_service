@@ -114,9 +114,6 @@ export class UsersService {
       }
       updateData.EmployeeId = dto.EmployeeId;
     }
-    if (dto.Password) {
-      updateData.PasswordHash = await bcrypt.hash(dto.Password, 10);
-    }
     if (dto.Section !== undefined) updateData.Section = dto.Section;
     if (dto.Role !== undefined) updateData.Role = dto.Role;
     if (dto.MobileNo !== undefined) updateData.MobileNo = dto.MobileNo;
@@ -151,6 +148,23 @@ export class UsersService {
     });
 
     return user;
+  }
+
+  async resetPassword(id: number, newPassword: string, actorId: number): Promise<{ message: string }> {
+    const user = await this.findOne(id);
+    await this.prisma.users.update({
+      where: { Id: id },
+      data: { PasswordHash: await bcrypt.hash(newPassword, 10) },
+    });
+
+    this.auditService.log({
+      entityType: 'User',
+      entityId: id,
+      action: 'RESET_PASSWORD',
+      userId: actorId,
+    });
+
+    return { message: `Password for ${user.FirstName} ${user.LastName} has been reset` };
   }
 
   async deactivate(id: number): Promise<Omit<Users, 'PasswordHash'>> {
