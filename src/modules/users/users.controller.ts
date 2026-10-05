@@ -17,6 +17,8 @@ import { RequirePermission } from '../permissions/require-permission.decorator';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('Users')
@@ -38,6 +40,17 @@ export class UsersController {
   @ApiOperation({ summary: 'Create a new user' })
   create(@Body() dto: CreateUserDto) {
     return this.service.create(dto);
+  }
+
+  @Post(':id/reset-password')
+  @RequirePermission('reset-password', 'write')
+  @ApiOperation({ summary: "Reset a user's password" })
+  resetPassword(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResetPasswordDto,
+    @CurrentUser() actor: { Id: number },
+  ) {
+    return this.service.resetPassword(id, dto.newPassword, actor.Id);
   }
 
   @Post(':id/deactivate')
