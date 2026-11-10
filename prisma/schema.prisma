@@ -27,6 +27,7 @@ model Users {
   CommActionReplies          CommActionReply[]      @relation("CommActionReplySender")
   CommReplyImages            CommActionReplyImage[] @relation("CommReplyImageUploader")
   CommActionsCompleted       CommAction[]           @relation("CommActionCompletedBy")
+  CommActionsCreated         CommAction[]           @relation("CommActionCreatedBy")
   CommImagesUploaded         CommImage[]            @relation("CommImageUploadedBy")
   CommsArchived              Communication[]        @relation("CommArchivedBy")
   CommsCreated               Communication[]        @relation("CommCreatedBy")
@@ -381,14 +382,17 @@ model CommAction {
   CompletedById   Int?                 @map("completed_by")
   Notes           String?              @map("notes") @db.Text
   CreatedAt       DateTime             @default(now()) @map("created_at") @db.DateTime(0)
+  CreatedById     Int?                 @map("created_by")
   Assignees       CommActionAssignee[]
   Replies         CommActionReply[]
   Communication   Communication        @relation(fields: [CommunicationId], references: [Id], onDelete: Cascade)
   CompletedBy     Users?               @relation("CommActionCompletedBy", fields: [CompletedById], references: [Id])
+  CreatedBy       Users?               @relation("CommActionCreatedBy", fields: [CreatedById], references: [Id])
 
   @@index([CommunicationId])
   @@index([Status])
   @@index([CompletedById], map: "comm_actions_completed_by_fkey")
+  @@index([CreatedById])
   @@map("comm_actions")
 }
 
