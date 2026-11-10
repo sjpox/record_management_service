@@ -48,6 +48,7 @@ const commInclude = {
   Actions: {
     include: {
       CompletedBy: { select: userSelect },
+      CreatedBy: { select: userSelect },
       Assignees: {
         include: { User: { select: userSelect } },
       },
@@ -94,6 +95,9 @@ export class CommsService {
             : assignee.Name,
         })),
         createdAt: a.CreatedAt.toISOString(),
+        createdBy: a.CreatedBy
+          ? { id: a.CreatedBy.Id, firstName: a.CreatedBy.FirstName, lastName: a.CreatedBy.LastName }
+          : null,
         replyCount: a._count?.Replies || 0,
         completedAt: a.CompletedAt?.toISOString() || null,
         completedBy: a.CompletedBy
@@ -309,6 +313,7 @@ export class CommsService {
             create: dto.actions.map((a) => ({
               ActionRequired: a.actionRequired,
               DueDate: a.dueDate ? new Date(a.dueDate) : null,
+              CreatedById: userId,
               Assignees: a.assignees?.length
                 ? {
                     create: a.assignees.map((assignee) => ({
@@ -466,6 +471,7 @@ export class CommsService {
               CommunicationId: id,
               ActionRequired: a.actionRequired,
               DueDate: a.dueDate ? new Date(a.dueDate) : null,
+              CreatedById: userId ?? null,
               Assignees: a.assignees?.length
                 ? {
                     create: a.assignees.map((assignee) => ({
