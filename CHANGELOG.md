@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.14.1] - 2026-11-10
+
+### Added
+- Communication action items now track who created them (`CreatedById` on `CommAction`).
+
 ## [1.14.0] - 2026-10-05
 
 ### Added
